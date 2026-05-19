@@ -19,6 +19,7 @@ if (-not (Test-Path $VenvPath)) {
 $Python = Join-Path $VenvPath "Scripts\python.exe"
 
 & $Python -m pip install --upgrade pip
+& $Python -m pip install --cache-dir $PipCache --force-reinstall torch==2.6.0+cu124 --index-url https://download.pytorch.org/whl/cu124
 & $Python -m pip install --cache-dir $PipCache -r requirements.txt
 
 Write-Host ""

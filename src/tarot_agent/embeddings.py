@@ -9,6 +9,9 @@ class BgeM3Embeddings:
     """Small LangChain-compatible wrapper around sentence-transformers."""
 
     def __init__(self, config: AppConfig):
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
         try:
             from sentence_transformers import SentenceTransformer
         except ImportError as exc:
@@ -24,11 +27,19 @@ class BgeM3Embeddings:
         except Exception:
             device = "cpu"
 
-        self.model = SentenceTransformer(
-            config.embedding_model,
-            cache_folder=str(config.model_cache_dir),
-            device=device,
-        )
+        try:
+            self.model = SentenceTransformer(
+                config.embedding_model,
+                cache_folder=str(config.model_cache_dir),
+                device=device,
+                local_files_only=True,
+            )
+        except Exception:
+            self.model = SentenceTransformer(
+                config.embedding_model,
+                cache_folder=str(config.model_cache_dir),
+                device=device,
+            )
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors = self.model.encode(

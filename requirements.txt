@@ -9,5 +9,6 @@ langchain-chroma>=0.1
 langgraph>=0.2
 chromadb>=0.5
 sentence-transformers>=3.0
-torch>=2.3
+--extra-index-url https://download.pytorch.org/whl/cu124
+torch==2.6.0+cu124
 Pillow>=10.0
