@@ -38,19 +38,28 @@ DEFAULT_PERSONAS = {
 }
 
 
+def persona_path(config: AppConfig, reader_id: str):
+    return config.personas_dir / f"{reader_id}.json"
+
+
 def load_persona(config: AppConfig, reader_id: str) -> PersonaProfile:
-    path = config.personas_dir / f"{reader_id}.json"
+    path = persona_path(config, reader_id)
     if path.exists():
         return PersonaProfile.model_validate_json(path.read_text(encoding="utf-8"))
     return DEFAULT_PERSONAS.get(reader_id, DEFAULT_PERSONAS["tarotist_1"])
 
 
-def save_default_personas(config: AppConfig) -> None:
+def save_persona(config: AppConfig, profile: PersonaProfile) -> None:
+    config.ensure_dirs()
+    persona_path(config, profile.reader_id).write_text(
+        json.dumps(profile.model_dump(), ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+
+def save_default_personas(config: AppConfig, overwrite: bool = False) -> None:
     config.ensure_dirs()
     for reader_id, profile in DEFAULT_PERSONAS.items():
-        path = config.personas_dir / f"{reader_id}.json"
-        if not path.exists():
-            path.write_text(
-                json.dumps(profile.model_dump(), ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
+        path = persona_path(config, reader_id)
+        if overwrite or not path.exists():
+            save_persona(config, profile)

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import random
+
 MAJOR_ARCANA = [
     ("愚人", "The Fool"),
     ("魔术师", "The Magician"),
@@ -55,10 +57,27 @@ MINOR_ARCANA = [
     for rank_cn, rank_en in RANKS
 ]
 
+ALL_CARDS = [*MAJOR_ARCANA, *MINOR_ARCANA]
+
 
 def card_display_names() -> list[str]:
-    return [f"{cn} / {en}" for cn, en in [*MAJOR_ARCANA, *MINOR_ARCANA]]
+    return [format_card_name(cn, en) for cn, en in ALL_CARDS]
 
 
 def chinese_card_names() -> list[str]:
-    return [cn for cn, _ in [*MAJOR_ARCANA, *MINOR_ARCANA]]
+    return [cn for cn, _ in ALL_CARDS]
+
+
+def format_card_name(chinese_name: str, english_name: str) -> str:
+    return f"{chinese_name} / {english_name}"
+
+
+def random_three_card_draw() -> list[dict[str, str]]:
+    cards = random.sample(ALL_CARDS, 3)
+    return [
+        {
+            "name": format_card_name(chinese_name, english_name),
+            "orientation": random.choice(["正位", "逆位"]),
+        }
+        for chinese_name, english_name in cards
+    ]

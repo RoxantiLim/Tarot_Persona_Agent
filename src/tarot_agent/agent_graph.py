@@ -25,7 +25,7 @@ class ReadingState(TypedDict, total=False):
 
 
 def _cards_text(cards: list[dict[str, str]]) -> str:
-    return "；".join(f"{card['name']}（{card.get('orientation', '不确定')}）" for card in cards)
+    return "；".join(f"{card['name']}（{card.get('orientation', '正位')}）" for card in cards)
 
 
 def parse_user_input(state: ReadingState) -> ReadingState:
@@ -65,7 +65,7 @@ def load_persona_profile(config: AppConfig):
 def generate_reading(config: AppConfig):
     def node(state: ReadingState) -> ReadingState:
         case_context = "\n\n".join(
-            f"问题：{case.get('question', '')}\n牌：{case.get('cards', [])}\n回答：{case.get('reader_answer', '')}"
+            f"问题：{case.get('question', '')}\n牌面：{case.get('cards', [])}\n回答：{case.get('reader_answer', '')}"
             for case in state.get("similar_cases", [])
         ) or "未检索到相似案例。"
         prompt = PERSONA_READING_TEMPLATE.format(

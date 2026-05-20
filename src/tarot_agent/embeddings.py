@@ -4,6 +4,8 @@ import os
 
 from .config import AppConfig
 
+_MODEL_CACHE = {}
+
 
 class BgeM3Embeddings:
     """Small LangChain-compatible wrapper around sentence-transformers."""
@@ -20,26 +22,26 @@ class BgeM3Embeddings:
         os.environ.setdefault("HF_HOME", str(config.model_cache_dir))
         os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(config.model_cache_dir))
 
-        try:
-            import torch
+        device = _preferred_device()
+        cache_key = (config.embedding_model, str(config.model_cache_dir), device)
+        if cache_key in _MODEL_CACHE:
+            self.model = _MODEL_CACHE[cache_key]
+            return
 
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-        except Exception:
-            device = "cpu"
-
         try:
-            self.model = SentenceTransformer(
-                config.embedding_model,
-                cache_folder=str(config.model_cache_dir),
-                device=device,
-                local_files_only=True,
-            )
-        except Exception:
-            self.model = SentenceTransformer(
-                config.embedding_model,
-                cache_folder=str(config.model_cache_dir),
-                device=device,
-            )
+            self.model = _load_model(SentenceTransformer, config, device)
+        except Exception as exc:
+            if device == "cuda" and _looks_like_cuda_oom(exc):
+                _clear_cuda_cache()
+                device = "cpu"
+                cache_key = (config.embedding_model, str(config.model_cache_dir), device)
+                if cache_key not in _MODEL_CACHE:
+                    _MODEL_CACHE[cache_key] = _load_model(SentenceTransformer, config, device)
+                self.model = _MODEL_CACHE[cache_key]
+                return
+            raise
+
+        _MODEL_CACHE[cache_key] = self.model
 
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors = self.model.encode(
@@ -52,3 +54,35 @@ class BgeM3Embeddings:
     def embed_query(self, text: str) -> list[float]:
         vector = self.model.encode(text, normalize_embeddings=True)
         return vector.tolist()
+
+
+def _preferred_device() -> str:
+    try:
+        import torch
+
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    except Exception:
+        return "cpu"
+
+
+def _load_model(SentenceTransformer, config: AppConfig, device: str):
+    return SentenceTransformer(
+        config.embedding_model,
+        cache_folder=str(config.model_cache_dir),
+        device=device,
+        local_files_only=True,
+    )
+
+
+def _looks_like_cuda_oom(exc: Exception) -> bool:
+    text = repr(exc).lower()
+    return "cuda out of memory" in text or "outofmemoryerror" in text
+
+
+def _clear_cuda_cache() -> None:
+    try:
+        import torch
+
+        torch.cuda.empty_cache()
+    except Exception:
+        pass

@@ -64,5 +64,5 @@ def answer_knowledge_query(
         ],
         temperature=0.2,
     )
-    error = "" if docs else "没有检索到知识库片段，回答可能只包含配置提示或依据有限。"
+    error = "" if docs else "没有检索到知识库片段，回答依据有限。"
     return RAGResult(answer=answer, sources=source_list(docs), context_docs=docs, error=error)

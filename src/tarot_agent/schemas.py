@@ -17,7 +17,7 @@ class DocumentChunk(BaseModel):
 
 class TarotCardInput(BaseModel):
     name: str
-    orientation: Literal["正位", "逆位", "不确定"] = "不确定"
+    orientation: Literal["正位", "逆位"] = "正位"
 
 
 class TarotCase(BaseModel):

@@ -7,6 +7,13 @@ if (-not (Test-Path $Python)) {
     throw "Python venv not found: $Python. Run scripts\setup_env.ps1 first."
 }
 
+$Existing = Get-CimInstance Win32_Process -Filter "name = 'python.exe'" |
+    Where-Object { $_.CommandLine -like "*streamlit*" -and $_.CommandLine -like "*Tarot_Persona_Agent*" }
+
+foreach ($Process in $Existing) {
+    Stop-Process -Id $Process.ProcessId -Force
+}
+
 $Args = @(
     "-m", "streamlit", "run", "app.py",
     "--server.headless", "true",
