@@ -27,6 +27,7 @@ class AppConfig:
     vision_api_key: str
     vision_base_url: str
     vision_model: str
+    case_extract_model: str
     build_chroma: bool
 
     @classmethod
@@ -54,6 +55,7 @@ class AppConfig:
             vision_api_key=os.getenv("VISION_API_KEY", ""),
             vision_base_url=os.getenv("VISION_BASE_URL", ""),
             vision_model=os.getenv("VISION_MODEL", ""),
+            case_extract_model=os.getenv("CASE_EXTRACT_MODEL", "deepseek-chat"),
             build_chroma=os.getenv("BUILD_CHROMA", "0").lower() in {"1", "true", "yes"},
         )
 

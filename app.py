@@ -327,14 +327,337 @@ def render_case_status(config: AppConfig) -> None:
     else:
         st.info("当前还没有结构化案例文件。也就是说：截图还没有真正录入案例库。")
 
+    if not config.vision_api_key or not config.vision_base_url or not config.vision_model:
+        st.warning("还没有配置视觉模型。截图案例抽取需要在 `.env` 中填写 `VISION_API_KEY`、`VISION_BASE_URL`、`VISION_MODEL`。")
+    else:
+        st.success("视觉模型配置已检测到，可以运行截图抽取脚本。")
+
     st.markdown(
         """
 后续流程：
 1. 配置 `VISION_API_KEY`、`VISION_BASE_URL`、`VISION_MODEL`。
-2. 运行 `python scripts\\extract_cases.py tarotist_1` 生成候选案例。
-3. 人工审核候选案例，把高质量样本保存为 `data/cases/tarotist_1_reviewed.jsonl`。
+2. 先试跑 `python scripts\\extract_cases.py tarotist_1 5 5`，确认抽取质量。
+3. 全量运行 `python scripts\\extract_cases.py tarotist_1 0 5` 生成候选案例。
+4. 运行 `python scripts\\promote_case_candidates.py tarotist_1`，把完整候选自动写入 `tarotist_1_reviewed.jsonl`，待人工处理的写入 `tarotist_1_needs_review.jsonl`。
 """
     )
+
+    preview_options = ["不预览"] + [path.name for path in sorted(config.cases_dir.glob("*.jsonl"))]
+    preview_file = st.selectbox("预览案例文件", preview_options)
+    if preview_file != "不预览":
+        rows = load_jsonl_preview(config.cases_dir / preview_file, limit=5)
+        st.json(rows, expanded=False)
+
+
+    render_case_review_workspace(config)
+
+
+def render_case_review_workspace(config: AppConfig) -> None:
+    st.divider()
+    st.subheader("人工审核工作台")
+    st.caption("从 needs_review 中挑选可用案例，修正后加入 reviewed。Agent 只检索 reviewed 文件。")
+
+    reader_id = st.selectbox("审核占卜师", ["tarotist_1", "tarotist_2"], key="review_reader_id")
+    needs_path = config.cases_dir / f"{reader_id}_needs_review.jsonl"
+    reviewed_path = config.cases_dir / f"{reader_id}_reviewed.jsonl"
+
+    needs_rows = load_jsonl_rows(needs_path)
+    reviewed_count = count_jsonl_lines(reviewed_path) if reviewed_path.exists() else 0
+    col_a, col_b = st.columns(2)
+    col_a.metric("待审核", len(needs_rows))
+    col_b.metric("已入库 reviewed", reviewed_count)
+
+    undo_key = f"last_removed_review_{reader_id}"
+    if undo_key in st.session_state:
+        removed = st.session_state[undo_key]
+        undo_label = case_option_label(removed.get("index", 0), removed["row"])
+        col_undo, col_hint = st.columns([0.28, 0.72])
+        with col_undo:
+            if st.button("撤回上一个移除", key=f"undo_remove_{reader_id}"):
+                restore_index = min(removed.get("index", len(needs_rows)), len(needs_rows))
+                needs_rows.insert(restore_index, removed["row"])
+                write_jsonl_rows(needs_path, needs_rows)
+                queue_review_index(reader_id, restore_index, len(needs_rows))
+                del st.session_state[undo_key]
+                st.success("已撤回上一个移除。")
+                st.rerun()
+        with col_hint:
+            st.caption(f"可撤回：{undo_label}")
+
+    if not needs_rows:
+        st.info(f"没有找到待审核案例：{needs_path}")
+        return
+
+    options = list(range(len(needs_rows)))
+    select_key = f"review_index_{reader_id}"
+    pending_index_key = f"review_pending_index_{reader_id}"
+    if pending_index_key in st.session_state:
+        st.session_state[select_key] = min(st.session_state[pending_index_key], len(needs_rows) - 1)
+        del st.session_state[pending_index_key]
+
+    selected_index = st.selectbox(
+        "选择待审核条目",
+        options,
+        format_func=lambda idx: case_option_label(idx, needs_rows[idx]),
+        key=select_key,
+    )
+    row = needs_rows[selected_index]
+
+    left, right = st.columns([0.9, 1.1])
+    with left:
+        st.markdown("**原始信息**")
+        source_image = first_source_image(row)
+        if source_image:
+            st.caption(source_image)
+            image_path = Path(source_image)
+            if image_path.exists():
+                st.image(str(image_path), use_container_width=True)
+            else:
+                st.warning("本地截图路径不存在，可能移动过文件。")
+        st.json(row, expanded=False)
+
+    with right:
+        st.markdown("**编辑为完整案例**")
+        default_cards = case_cards_to_text(row.get("cards", []))
+        with st.form(f"review_form_{reader_id}_{selected_index}"):
+            question = st.text_area("问题", value=str(row.get("question", "")), height=90)
+            background = st.text_area("背景", value=str(row.get("background", "")), height=70)
+            spread = st.text_input("牌阵", value=str(row.get("spread", "无牌阵三张牌") or "无牌阵三张牌"))
+            cards_text = st.text_area(
+                "牌面（一行一张：牌名 | 正位/逆位）",
+                value=default_cards,
+                height=110,
+                placeholder="星币一 | 逆位\n恶魔 | 逆位\n星币四 | 逆位",
+            )
+            reader_answer = st.text_area("占卜师回答", value=str(row.get("reader_answer", "")), height=180)
+            followups_text = st.text_area(
+                "追问/反馈（可选，一行一条：speaker | text）",
+                value=case_followups_to_text(row.get("followups", [])),
+                height=90,
+            )
+            notes = st.text_input("备注", value=str(row.get("notes", row.get("reason", "")) or ""))
+            remove_after_approve = st.checkbox("通过后从待审核池移除", value=True)
+
+            save_pending = st.form_submit_button("保存修改到待审核")
+            approve = st.form_submit_button("通过审核并加入 reviewed", type="primary")
+            discard = st.form_submit_button("从待审核池移除")
+
+        edited_case, validation_errors = build_reviewed_case(
+            original=row,
+            reader_id=reader_id,
+            reviewed_path=reviewed_path,
+            question=question,
+            background=background,
+            spread=spread,
+            cards_text=cards_text,
+            reader_answer=reader_answer,
+            followups_text=followups_text,
+            notes=notes,
+        )
+
+        with st.expander("预览将保存的 JSON", expanded=False):
+            st.json(edited_case, expanded=False)
+
+        if save_pending:
+            needs_rows[selected_index] = edited_case | {"quality": "needs_review"}
+            write_jsonl_rows(needs_path, needs_rows)
+            queue_review_index(reader_id, selected_index + 1, len(needs_rows))
+            st.success("已保存到待审核文件。")
+            st.rerun()
+
+        if approve:
+            if validation_errors:
+                st.error("；".join(validation_errors))
+            else:
+                append_jsonl_row(reviewed_path, edited_case)
+                if remove_after_approve:
+                    del needs_rows[selected_index]
+                    write_jsonl_rows(needs_path, needs_rows)
+                    queue_review_index(reader_id, selected_index, len(needs_rows))
+                else:
+                    queue_review_index(reader_id, selected_index + 1, len(needs_rows))
+                st.success(f"已加入 reviewed：{edited_case['case_id']}")
+                st.rerun()
+
+        if discard:
+            st.session_state[undo_key] = {"row": row, "index": selected_index}
+            del needs_rows[selected_index]
+            write_jsonl_rows(needs_path, needs_rows)
+            queue_review_index(reader_id, selected_index, len(needs_rows))
+            st.success("已从待审核池移除，可用上方按钮撤回。")
+            st.rerun()
+
+
+def queue_review_index(reader_id: str, requested_index: int, total_rows: int) -> None:
+    if total_rows <= 0:
+        st.session_state[f"review_pending_index_{reader_id}"] = 0
+        return
+    st.session_state[f"review_pending_index_{reader_id}"] = max(0, min(requested_index, total_rows - 1))
+
+
+def case_option_label(index: int, row: dict[str, Any]) -> str:
+    image_name = Path(first_source_image(row)).name if first_source_image(row) else "unknown"
+    quality = row.get("quality", row.get("status", "needs_review"))
+    question = str(row.get("question", row.get("reason", ""))).replace("\n", " ")
+    return f"{index + 1}. {image_name} | {quality} | {question[:36]}"
+
+
+def first_source_image(row: dict[str, Any]) -> str:
+    if row.get("source_images"):
+        return str(row["source_images"][0])
+    if row.get("source_image"):
+        return str(row["source_image"])
+    return ""
+
+
+def case_cards_to_text(cards: list[dict[str, Any]]) -> str:
+    lines = []
+    for card in cards or []:
+        if not isinstance(card, dict):
+            continue
+        name = str(card.get("name", "")).strip()
+        orientation = str(card.get("orientation", "")).strip()
+        if name or orientation:
+            lines.append(f"{name} | {orientation}")
+    return "\n".join(lines)
+
+
+def case_followups_to_text(followups: list[dict[str, Any]]) -> str:
+    lines = []
+    for item in followups or []:
+        if not isinstance(item, dict):
+            continue
+        speaker = str(item.get("speaker", "unknown")).strip()
+        text = str(item.get("text", "")).strip()
+        if text:
+            lines.append(f"{speaker} | {text}")
+    return "\n".join(lines)
+
+
+def parse_cards_text(cards_text: str) -> tuple[list[dict[str, str]], list[str]]:
+    cards = []
+    errors = []
+    for line_no, raw_line in enumerate(cards_text.splitlines(), start=1):
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "|" in line:
+            name, orientation = [part.strip() for part in line.split("|", 1)]
+        else:
+            parts = line.replace("，", " ").replace(",", " ").split()
+            name = " ".join(parts[:-1]).strip()
+            orientation = parts[-1].strip() if parts else ""
+        if orientation not in {"正位", "逆位"}:
+            errors.append(f"第 {line_no} 行牌面方向必须是 正位 或 逆位")
+            continue
+        if not name:
+            errors.append(f"第 {line_no} 行缺少牌名")
+            continue
+        cards.append({"name": name, "orientation": orientation})
+    return cards, errors
+
+
+def parse_followups_text(followups_text: str) -> list[dict[str, str]]:
+    followups = []
+    for raw_line in followups_text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if "|" in line:
+            speaker, text = [part.strip() for part in line.split("|", 1)]
+        else:
+            speaker, text = "unknown", line
+        if text:
+            followups.append({"speaker": speaker or "unknown", "text": text})
+    return followups
+
+
+def build_reviewed_case(
+    original: dict[str, Any],
+    reader_id: str,
+    reviewed_path: Path,
+    question: str,
+    background: str,
+    spread: str,
+    cards_text: str,
+    reader_answer: str,
+    followups_text: str,
+    notes: str,
+) -> tuple[dict[str, Any], list[str]]:
+    cards, card_errors = parse_cards_text(cards_text)
+    source_images = original.get("source_images") or ([original["source_image"]] if original.get("source_image") else [])
+    case_id = str(original.get("case_id") or next_manual_case_id(reviewed_path, reader_id))
+    edited_case = {
+        "reader_id": reader_id,
+        "case_id": case_id,
+        "question": question.strip(),
+        "background": background.strip(),
+        "spread": spread.strip() or "无牌阵三张牌",
+        "cards": cards,
+        "reader_answer": reader_answer.strip(),
+        "followups": parse_followups_text(followups_text),
+        "source_images": source_images,
+        "case_type": original.get("case_type", "tieba_screenshot"),
+        "quality": "reviewed",
+        "privacy_status": "manual_reviewed",
+        "notes": notes.strip(),
+    }
+
+    errors = list(card_errors)
+    if not edited_case["question"]:
+        errors.append("问题不能为空")
+    if not edited_case["reader_answer"]:
+        errors.append("占卜师回答不能为空")
+    if not edited_case["cards"]:
+        errors.append("至少需要一张牌")
+    return edited_case, errors
+
+
+def next_manual_case_id(reviewed_path: Path, reader_id: str) -> str:
+    existing = count_jsonl_lines(reviewed_path) if reviewed_path.exists() else 0
+    return f"{reader_id}_manual_{existing + 1:04d}"
+
+
+def append_jsonl_row(path: Path, row: dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def write_jsonl_rows(path: Path, rows: list[dict[str, Any]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup_jsonl_file(path)
+    with path.open("w", encoding="utf-8") as f:
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
+
+def backup_jsonl_file(path: Path) -> None:
+    if not path.exists():
+        return
+    backup_dir = path.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / f"{path.stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.jsonl"
+    backup_path.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def load_jsonl_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                value = {"raw": line.strip(), "parse_error": True}
+            if isinstance(value, dict):
+                rows.append(value)
+            else:
+                rows.append({"value": value})
+    return rows
 
 
 def render_persona_editor(config: AppConfig) -> None:
@@ -397,6 +720,23 @@ def cards_to_text(cards: list[dict[str, str]]) -> str:
 def count_jsonl_lines(path: Path) -> int:
     with path.open("r", encoding="utf-8") as f:
         return sum(1 for line in f if line.strip())
+
+
+def load_jsonl_preview(path: Path, limit: int = 5) -> list[dict[str, Any]]:
+    rows = []
+    if not path.exists():
+        return rows
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            try:
+                rows.append(json.loads(line))
+            except json.JSONDecodeError:
+                rows.append({"raw": line.strip(), "parse_error": True})
+            if len(rows) >= limit:
+                break
+    return rows
 
 
 def now_text() -> str:

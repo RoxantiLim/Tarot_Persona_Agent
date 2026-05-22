@@ -10,10 +10,24 @@ def deepseek_chat(config: AppConfig, messages: list[dict[str, str]], temperature
         from openai import OpenAI
     except ImportError:
         return "缺少 openai 依赖。请先安装 requirements.txt。"
+
     client = OpenAI(api_key=config.deepseek_api_key, base_url=config.deepseek_base_url)
-    response = client.chat.completions.create(
-        model=config.deepseek_model,
-        messages=messages,
-        temperature=temperature,
-    )
-    return response.choices[0].message.content or ""
+
+    def call_model(model: str) -> str:
+        response = client.chat.completions.create(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+        )
+        return (response.choices[0].message.content or "").strip()
+
+    answer = call_model(config.deepseek_model)
+    if answer:
+        return answer
+
+    if config.case_extract_model and config.case_extract_model != config.deepseek_model:
+        fallback_answer = call_model(config.case_extract_model)
+        if fallback_answer:
+            return fallback_answer
+
+    return ""
