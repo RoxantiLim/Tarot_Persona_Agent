@@ -22,7 +22,7 @@ def deepseek_chat(config: AppConfig, messages: list[dict[str, str]], temperature
         return (response.choices[0].message.content or "").strip()
 
     answer = call_model(config.deepseek_model)
-    if answer:
+    if answer and not _looks_like_broken_chinese(answer):
         return answer
 
     if config.case_extract_model and config.case_extract_model != config.deepseek_model:
@@ -31,3 +31,13 @@ def deepseek_chat(config: AppConfig, messages: list[dict[str, str]], temperature
             return fallback_answer
 
     return ""
+
+
+def _looks_like_broken_chinese(text: str) -> bool:
+    if not text:
+        return True
+    if "???" in text:
+        return True
+    cjk_count = sum(1 for char in text if "\u4e00" <= char <= "\u9fff")
+    question_count = text.count("?")
+    return question_count >= 8 and cjk_count < 10

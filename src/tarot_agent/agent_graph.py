@@ -28,6 +28,10 @@ def _cards_text(cards: list[dict[str, str]]) -> str:
     return "；".join(f"{card['name']}（{card.get('orientation', '正位')}）" for card in cards)
 
 
+def _missing_user_cards(answer: str, cards: list[dict[str, str]]) -> list[str]:
+    return [card["name"] for card in cards if card["name"] not in answer]
+
+
 def parse_user_input(state: ReadingState) -> ReadingState:
     cards_text = _cards_text(state["cards"])
     state["query"] = f"{state['question']} {cards_text}"
@@ -75,7 +79,37 @@ def generate_reading(config: AppConfig):
             knowledge_context=format_context(state.get("knowledge_docs", [])),
             case_context=case_context,
         )
-        state["answer"] = deepseek_chat(config, [{"role": "user", "content": prompt}], temperature=0.45)
+        system_prompt = (
+            "你是塔罗占卜回答生成器。必须严格使用用户本次提供的牌面。"
+            f"本次牌面只有：{_cards_text(state['cards'])}。"
+            "禁止替换、增删或改写成其他牌。"
+        )
+        answer = deepseek_chat(
+            config,
+            [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.35,
+        )
+        missing_cards = _missing_user_cards(answer, state["cards"])
+        if missing_cards:
+            retry_prompt = (
+                f"{prompt}\n\n"
+                "上一次回答没有严格使用用户牌面。请重新生成，必须逐一使用以下三张牌，"
+                f"且回答中必须出现这些牌名：{_cards_text(state['cards'])}。"
+                "不要提及任何其他牌名。"
+            )
+            answer = deepseek_chat(
+                config,
+                [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": retry_prompt},
+                ],
+                temperature=0.25,
+            )
+            state["card_retry_missing"] = missing_cards
+        state["answer"] = answer
         state.setdefault("steps", []).append("generate_reading")
         return state
 
@@ -143,6 +177,7 @@ def run_persona_reading(
             "reader_id": reader_id,
             "steps": final_state.get("steps", []),
             "style_check": final_state.get("check", ""),
+            "card_retry_missing": final_state.get("card_retry_missing", []),
             "langgraph_fallback": final_state.get("langgraph_fallback", ""),
         },
         knowledge_docs=final_state.get("knowledge_docs", []),

@@ -11,6 +11,28 @@ from src.tarot_agent.cases import extract_cases_from_image, extract_cases_from_o
 from src.tarot_agent.config import AppConfig
 
 
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png", ".webp"}
+
+
+def reader_image_dir(root: Path, reader_id: str) -> Path:
+    if reader_id.startswith("tarotist_"):
+        suffix = reader_id.removeprefix("tarotist_")
+        candidate = root / f"Tarotist-{suffix}"
+        if candidate.exists():
+            return candidate
+    if reader_id == "tarotist_1":
+        return root / "Tarotist-1"
+    return root / reader_id
+
+
+def list_images(image_dir: Path) -> list[Path]:
+    return sorted(
+        path
+        for path in image_dir.rglob("*")
+        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    )
+
+
 def main() -> None:
     config = AppConfig.load()
     config.ensure_dirs()
@@ -18,10 +40,10 @@ def main() -> None:
     reader_id = sys.argv[1] if len(sys.argv) > 1 else "tarotist_1"
     limit = int(sys.argv[2]) if len(sys.argv) > 2 else 0
     batch_size = int(sys.argv[3]) if len(sys.argv) > 3 else 1
-    image_dir = ROOT / ("Tarotist-1" if reader_id == "tarotist_1" else reader_id)
+    image_dir = reader_image_dir(ROOT, reader_id)
     output_path = config.cases_dir / f"{reader_id}_candidates.jsonl"
 
-    images = sorted([*image_dir.glob("*.jpg"), *image_dir.glob("*.png")])
+    images = list_images(image_dir)
     if limit:
         images = images[:limit]
 

@@ -313,7 +313,11 @@ def render_case_status(config: AppConfig) -> None:
     reader_dirs = sorted([p for p in config.project_root.glob("Tarotist-*") if p.is_dir()])
     raw_rows = []
     for reader_dir in reader_dirs:
-        image_count = len(list(reader_dir.glob("*.jpg"))) + len(list(reader_dir.glob("*.png")))
+        image_count = sum(
+            1
+            for path in reader_dir.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+        )
         raw_rows.append({"原始目录": reader_dir.name, "截图数量": image_count})
     st.markdown("**原始截图目录**")
     st.dataframe(raw_rows, hide_index=True, use_container_width=True)
