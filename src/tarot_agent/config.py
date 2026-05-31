@@ -23,7 +23,10 @@ class AppConfig:
     deepseek_api_key: str
     deepseek_base_url: str
     deepseek_model: str
+    deepseek_timeout_seconds: float
     embedding_model: str
+    embedding_device: str
+    retrieval_mode: str
     vision_api_key: str
     vision_base_url: str
     vision_model: str
@@ -51,7 +54,10 @@ class AppConfig:
             deepseek_api_key=os.getenv("DEEPSEEK_API_KEY", ""),
             deepseek_base_url=os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
             deepseek_model=os.getenv("DEEPSEEK_MODEL", "deepseek-chat"),
+            deepseek_timeout_seconds=float(os.getenv("DEEPSEEK_TIMEOUT_SECONDS", "90")),
             embedding_model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
+            embedding_device=os.getenv("EMBEDDING_DEVICE", "auto").strip().lower(),
+            retrieval_mode=os.getenv("RETRIEVAL_MODE", "vector").strip().lower(),
             vision_api_key=os.getenv("VISION_API_KEY", ""),
             vision_base_url=os.getenv("VISION_BASE_URL", ""),
             vision_model=os.getenv("VISION_MODEL", ""),

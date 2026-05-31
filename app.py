@@ -12,7 +12,7 @@ from src.tarot_agent.cards import MAJOR_ARCANA, MINOR_ARCANA, card_display_names
 from src.tarot_agent.config import AppConfig, dependency_report
 from src.tarot_agent.persona import DEFAULT_PERSONAS, load_persona, save_default_personas, save_persona
 from src.tarot_agent.rag_chain import answer_knowledge_query, retrieve_context
-from src.tarot_agent.schemas import PersonaProfile
+from src.tarot_agent.schemas import AgentResult, PersonaProfile
 from src.tarot_agent.vector_store import index_exists
 
 
@@ -173,13 +173,20 @@ def persona_page(config: AppConfig, dev_mode: bool) -> None:
             st.session_state.last_random_draw = card_inputs
         entry_readers = ["tarotist_1", "tarotist_2"] if compare else [reader_id]
         with st.spinner("Agent 正在检索知识库、案例和风格画像..."):
-            results = [
-                {
-                    "reader_id": rid,
-                    "result": run_persona_reading(config, rid, question, card_inputs),
-                }
-                for rid in entry_readers
-            ]
+            results = []
+            for rid in entry_readers:
+                results.append(
+                    {
+                        "reader_id": rid,
+                        "result": safe_run_persona_reading(
+                            config,
+                            rid,
+                            question,
+                            card_inputs,
+                            include_check=dev_mode and not compare,
+                        ),
+                    }
+                )
         st.session_state.agent_history.insert(
             0,
             {
@@ -192,6 +199,30 @@ def persona_page(config: AppConfig, dev_mode: bool) -> None:
         )
 
     render_agent_history(dev_mode)
+
+
+def safe_run_persona_reading(
+    config: AppConfig,
+    reader_id: str,
+    question: str,
+    card_inputs: list[dict[str, str]],
+    include_check: bool,
+) -> AgentResult:
+    try:
+        return run_persona_reading(
+            config,
+            reader_id,
+            question,
+            card_inputs,
+            include_check=include_check,
+        )
+    except Exception as exc:
+        return AgentResult(
+            answer=f"生成 {reader_id} 时出错：{exc}",
+            debug={"reader_id": reader_id, "error": repr(exc), "steps": ["failed"]},
+            knowledge_docs=[],
+            similar_cases=[],
+        )
 
 
 def draw_controls(draw_mode: str) -> list[dict[str, str]]:

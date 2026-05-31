@@ -13,6 +13,7 @@ from .embeddings import BgeM3Embeddings
 LOCAL_INDEX_DIR = "local_vectors"
 LOCAL_VECTORS_FILE = "vectors.npy"
 LOCAL_DOCS_FILE = "documents.jsonl"
+_STORE_CACHE = {}
 
 
 class LocalVectorStore:
@@ -20,7 +21,7 @@ class LocalVectorStore:
         self.config = config
         self.index_dir = config.data_dir / "indexes" / LOCAL_INDEX_DIR
         self.embeddings = BgeM3Embeddings(config)
-        self.vectors = np.load(self.index_dir / LOCAL_VECTORS_FILE)
+        self.vectors = np.load(self.index_dir / LOCAL_VECTORS_FILE, mmap_mode="r")
         self.documents = []
         with (self.index_dir / LOCAL_DOCS_FILE).open("r", encoding="utf-8") as f:
             for line in f:
@@ -98,7 +99,18 @@ def build_vector_store(config: AppConfig, documents: list[Document]):
 def load_vector_store(config: AppConfig):
     local_index = config.data_dir / "indexes" / LOCAL_INDEX_DIR / LOCAL_VECTORS_FILE
     if local_index.exists():
-        return LocalVectorStore(config)
+        docs_file = config.data_dir / "indexes" / LOCAL_INDEX_DIR / LOCAL_DOCS_FILE
+        cache_key = (
+            str(local_index),
+            local_index.stat().st_mtime_ns,
+            docs_file.stat().st_mtime_ns if docs_file.exists() else 0,
+            config.embedding_model,
+            config.embedding_device,
+        )
+        if cache_key not in _STORE_CACHE:
+            _STORE_CACHE.clear()
+            _STORE_CACHE[cache_key] = LocalVectorStore(config)
+        return _STORE_CACHE[cache_key]
     embeddings = BgeM3Embeddings(config)
     Chroma = _chroma_class()
     return Chroma(

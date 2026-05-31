@@ -25,6 +25,7 @@ data/cases/*_needs_review.jsonl
 data/cases/backups/
 data/personas/backups/
 E:/for-LLM/AUXI/
+logs/
 
 # Raw private/copyrighted local materials
 Doc/

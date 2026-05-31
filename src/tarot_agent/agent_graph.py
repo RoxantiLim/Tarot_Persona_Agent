@@ -135,6 +135,7 @@ def run_persona_reading(
     reader_id: str,
     question: str,
     cards: list[dict[str, str]],
+    include_check: bool = True,
 ) -> AgentResult:
     initial_state: ReadingState = {
         "reader_id": reader_id,
@@ -151,15 +152,19 @@ def run_persona_reading(
         graph.add_node("retrieve_reader_cases", retrieve_reader_cases(config))
         graph.add_node("load_persona_profile", load_persona_profile(config))
         graph.add_node("generate_reading", generate_reading(config))
-        graph.add_node("style_and_grounding_check", style_and_grounding_check(config))
+        if include_check:
+            graph.add_node("style_and_grounding_check", style_and_grounding_check(config))
 
         graph.set_entry_point("parse_user_input")
         graph.add_edge("parse_user_input", "retrieve_tarot_knowledge")
         graph.add_edge("retrieve_tarot_knowledge", "retrieve_reader_cases")
         graph.add_edge("retrieve_reader_cases", "load_persona_profile")
         graph.add_edge("load_persona_profile", "generate_reading")
-        graph.add_edge("generate_reading", "style_and_grounding_check")
-        graph.add_edge("style_and_grounding_check", END)
+        if include_check:
+            graph.add_edge("generate_reading", "style_and_grounding_check")
+            graph.add_edge("style_and_grounding_check", END)
+        else:
+            graph.add_edge("generate_reading", END)
         final_state = graph.compile().invoke(initial_state)
     except Exception as exc:
         final_state = initial_state
@@ -168,7 +173,8 @@ def run_persona_reading(
         final_state = retrieve_reader_cases(config)(final_state)
         final_state = load_persona_profile(config)(final_state)
         final_state = generate_reading(config)(final_state)
-        final_state = style_and_grounding_check(config)(final_state)
+        if include_check:
+            final_state = style_and_grounding_check(config)(final_state)
         final_state["langgraph_fallback"] = str(exc)
 
     return AgentResult(
@@ -176,7 +182,7 @@ def run_persona_reading(
         debug={
             "reader_id": reader_id,
             "steps": final_state.get("steps", []),
-            "style_check": final_state.get("check", ""),
+            "style_check": final_state.get("check", "skipped"),
             "card_retry_missing": final_state.get("card_retry_missing", []),
             "langgraph_fallback": final_state.get("langgraph_fallback", ""),
         },

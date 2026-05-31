@@ -21,7 +21,7 @@ class BgeM3Embeddings:
         except ImportError as exc:
             raise RuntimeError("缺少 sentence-transformers，请先安装 requirements.txt。") from exc
 
-        device = _preferred_device()
+        device = _preferred_device(config)
         cache_key = (config.embedding_model, str(config.model_cache_dir), device)
         if cache_key in _MODEL_CACHE:
             self.model = _MODEL_CACHE[cache_key]
@@ -55,7 +55,10 @@ class BgeM3Embeddings:
         return vector.tolist()
 
 
-def _preferred_device() -> str:
+def _preferred_device(config: AppConfig | None = None) -> str:
+    configured_device = (config.embedding_device if config else "auto").strip().lower()
+    if configured_device in {"cpu", "cuda"}:
+        return configured_device
     try:
         import torch
 

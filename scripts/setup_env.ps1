@@ -4,7 +4,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$VenvPath = Join-Path $AuxRoot ".venv"
+$BasePython = "E:\for-LLM\AUXI\Python311\python.exe"
+$VenvPath = Join-Path $AuxRoot ".venv-clean"
 $ModelPath = Join-Path $AuxRoot "models"
 $PipCache = Join-Path $AuxRoot "pip-cache"
 
@@ -12,8 +13,12 @@ New-Item -ItemType Directory -Force -Path $AuxRoot | Out-Null
 New-Item -ItemType Directory -Force -Path $ModelPath | Out-Null
 New-Item -ItemType Directory -Force -Path $PipCache | Out-Null
 
+if (-not (Test-Path $BasePython)) {
+    throw "Official Python not found: $BasePython. Install Python 3.11 to E:\for-LLM\AUXI\Python311 first."
+}
+
 if (-not (Test-Path $VenvPath)) {
-    python -m venv $VenvPath
+    & $BasePython -m venv $VenvPath
 }
 
 $Python = Join-Path $VenvPath "Scripts\python.exe"
