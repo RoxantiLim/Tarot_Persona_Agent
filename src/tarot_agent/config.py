@@ -27,6 +27,10 @@ class AppConfig:
     embedding_model: str
     embedding_device: str
     retrieval_mode: str
+    vector_store_backend: str
+    pdf_ocr_enabled: bool
+    pdf_ocr_dpi: int
+    pdf_ocr_min_chars: int
     vision_api_key: str
     vision_base_url: str
     vision_model: str
@@ -58,6 +62,10 @@ class AppConfig:
             embedding_model=os.getenv("EMBEDDING_MODEL", "BAAI/bge-m3"),
             embedding_device=os.getenv("EMBEDDING_DEVICE", "auto").strip().lower(),
             retrieval_mode=os.getenv("RETRIEVAL_MODE", "vector").strip().lower(),
+            vector_store_backend=os.getenv("VECTOR_STORE_BACKEND", "chroma").strip().lower(),
+            pdf_ocr_enabled=os.getenv("PDF_OCR_ENABLED", "0").lower() in {"1", "true", "yes"},
+            pdf_ocr_dpi=int(os.getenv("PDF_OCR_DPI", "180")),
+            pdf_ocr_min_chars=int(os.getenv("PDF_OCR_MIN_CHARS", "40")),
             vision_api_key=os.getenv("VISION_API_KEY", ""),
             vision_base_url=os.getenv("VISION_BASE_URL", ""),
             vision_model=os.getenv("VISION_MODEL", ""),

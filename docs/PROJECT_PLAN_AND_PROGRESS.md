@@ -1,5 +1,57 @@
 # Tarot Knowledge Companion + Tarot Persona Agent
 
+## 2026-05-31 Update: ChromaDB + PDF OCR
+
+The knowledge-base pipeline now supports the full first-stage workflow:
+
+```text
+PDF text extraction
+-> local OCR fallback for scanned pages
+-> page-level OCR cache
+-> paragraph chunks with source metadata
+-> BAAI/bge-m3 embeddings
+-> ChromaDB primary index
+-> NumPy fallback index
+```
+
+Current ingest result:
+
+- `1811` chunks
+- `806` native PDF text pages
+- `310` OCR pages
+- `11` pages still marked `needs_ocr`
+- Primary vector backend: `chroma`
+- Fallback vector backend: `numpy`
+
+Scanned-book OCR result:
+
+- `《经典塔罗攻略秘籍》1.pdf`: `89 / 89` pages recognized
+- `《经典塔罗攻略秘籍》2.pdf`: `99 / 99` pages recognized
+- `《经典塔罗攻略秘籍》3.pdf`: `119 / 120` pages recognized
+
+Runtime configuration:
+
+```text
+RETRIEVAL_MODE=vector
+VECTOR_STORE_BACKEND=chroma
+BUILD_CHROMA=1
+PDF_OCR_ENABLED=1
+PDF_OCR_DPI=180
+PDF_OCR_MIN_CHARS=40
+```
+
+OCR cache location:
+
+```text
+data/processed/pdf_ocr/
+```
+
+The application runs from the clean Python environment:
+
+```text
+E:\for-LLM\AUXI\Tarot_Persona_Agent\.venv-clean
+```
+
 更新时间：2026-05-22
 
 ## 项目定位

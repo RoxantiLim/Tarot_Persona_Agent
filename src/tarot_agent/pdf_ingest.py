@@ -19,24 +19,86 @@ CONTENT_TYPES = {
     "入门教程": ["入门", "基础", "教程", "beginner", "guide"],
 }
 
+_PDF_OCR_ENGINE = None
 
-def extract_pdf_text(pdf_path: Path) -> tuple[list[tuple[int, str]], list[int]]:
+
+def extract_pdf_text(config: AppConfig, pdf_path: Path) -> tuple[list[tuple[int, str, str]], list[int], dict]:
     try:
         import fitz
     except ImportError as exc:
         raise RuntimeError("缺少 PyMuPDF，请先安装 requirements.txt。") from exc
 
-    pages: list[tuple[int, str]] = []
+    pages: list[tuple[int, str, str]] = []
     needs_ocr: list[int] = []
+    stats = {"text_pages": 0, "ocr_pages": 0, "ocr_cache_hits": 0, "ocr_error_pages": []}
     with fitz.open(pdf_path) as doc:
         for page_index, page in enumerate(doc, start=1):
             text = page.get_text("text").strip()
             text = normalize_text(text)
-            if len(text) < 40:
-                needs_ocr.append(page_index)
+            if len(text) >= config.pdf_ocr_min_chars:
+                pages.append((page_index, text, "pdf_text"))
+                stats["text_pages"] += 1
                 continue
-            pages.append((page_index, text))
-    return pages, needs_ocr
+
+            if config.pdf_ocr_enabled:
+                try:
+                    ocr_text, cache_hit = extract_page_with_ocr(config, pdf_path, page_index, page)
+                    if cache_hit:
+                        stats["ocr_cache_hits"] += 1
+                    if len(ocr_text) >= config.pdf_ocr_min_chars:
+                        pages.append((page_index, ocr_text, "ocr"))
+                        stats["ocr_pages"] += 1
+                        continue
+                except Exception as exc:
+                    stats["ocr_error_pages"].append({"page": page_index, "error": str(exc)})
+            needs_ocr.append(page_index)
+    return pages, needs_ocr, stats
+
+
+def extract_page_with_ocr(config: AppConfig, pdf_path: Path, page_index: int, page) -> tuple[str, bool]:
+    cache_path = pdf_ocr_cache_path(config, pdf_path, page_index)
+    if cache_path.exists():
+        return cache_path.read_text(encoding="utf-8"), True
+
+    engine = pdf_ocr_engine()
+    png_bytes = page.get_pixmap(dpi=config.pdf_ocr_dpi, alpha=False).tobytes("png")
+    result, _ = engine(png_bytes)
+    lines = []
+    for item in result or []:
+        if len(item) < 3:
+            continue
+        box, text, score = item
+        if not text or score < 0.35:
+            continue
+        y = min(point[1] for point in box)
+        x = min(point[0] for point in box)
+        lines.append((y, x, str(text).strip()))
+    lines.sort(key=lambda row: (row[0], row[1]))
+    text = normalize_text("\n".join(line for _, _, line in lines if line))
+    cache_path.parent.mkdir(parents=True, exist_ok=True)
+    cache_path.write_text(text, encoding="utf-8")
+    return text, False
+
+
+def pdf_ocr_engine():
+    global _PDF_OCR_ENGINE
+    if _PDF_OCR_ENGINE is None:
+        try:
+            from rapidocr_onnxruntime import RapidOCR
+        except ImportError as exc:
+            raise RuntimeError("Missing rapidocr-onnxruntime dependency. Install requirements.txt first.") from exc
+        _PDF_OCR_ENGINE = RapidOCR()
+    return _PDF_OCR_ENGINE
+
+
+def pdf_ocr_cache_path(config: AppConfig, pdf_path: Path, page_index: int) -> Path:
+    return (
+        config.processed_dir
+        / "pdf_ocr"
+        / pdf_path.stem
+        / f"dpi-{config.pdf_ocr_dpi}"
+        / f"page-{page_index:04d}.txt"
+    )
 
 
 def normalize_text(text: str) -> str:
@@ -68,8 +130,15 @@ def classify_content(text: str) -> str:
     return best if scores[best] > 0 else "其他"
 
 
-def split_page_into_chunks(source_file: str, page: int, text: str, max_chars: int = 900) -> list[DocumentChunk]:
+def split_page_into_chunks(
+    source_file: str,
+    page: int,
+    text: str,
+    max_chars: int = 900,
+    extraction_method: str = "pdf_text",
+) -> list[DocumentChunk]:
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    paragraphs = split_oversized_paragraphs(paragraphs, max_chars)
     chunks: list[str] = []
     current = ""
     for paragraph in paragraphs:
@@ -92,9 +161,21 @@ def split_page_into_chunks(source_file: str, page: int, text: str, max_chars: in
                 chunk_index=idx,
                 language=detect_language(chunk_text),
                 content_type=classify_content(chunk_text),
+                extraction_method=extraction_method,
                 text=chunk_text,
             )
         )
+    return output
+
+
+def split_oversized_paragraphs(paragraphs: list[str], max_chars: int) -> list[str]:
+    output = []
+    for paragraph in paragraphs:
+        if len(paragraph) <= max_chars:
+            output.append(paragraph)
+            continue
+        for start in range(0, len(paragraph), max_chars):
+            output.append(paragraph[start : start + max_chars])
     return output
 
 
@@ -103,22 +184,41 @@ def ingest_pdfs_to_chunks(config: AppConfig) -> tuple[list[DocumentChunk], dict]
     report = {"files": [], "total_chunks": 0, "needs_ocr": {}}
     pdfs = sorted(config.doc_dir.glob("*.pdf"))
     for pdf_path in pdfs:
-        pages, needs_ocr = extract_pdf_text(pdf_path)
+        print(f"[ingest] processing {pdf_path.name}", flush=True)
+        pages, needs_ocr, stats = extract_pdf_text(config, pdf_path)
         file_chunks: list[DocumentChunk] = []
-        for page, text in pages:
-            file_chunks.extend(split_page_into_chunks(pdf_path.name, page, text))
+        for page, text, extraction_method in pages:
+            file_chunks.extend(
+                split_page_into_chunks(
+                    pdf_path.name,
+                    page,
+                    text,
+                    extraction_method=extraction_method,
+                )
+            )
         chunks.extend(file_chunks)
         report["files"].append(
             {
                 "file": pdf_path.name,
-                "text_pages": len(pages),
+                "text_pages": stats["text_pages"],
+                "ocr_pages": stats["ocr_pages"],
+                "ocr_cache_hits": stats["ocr_cache_hits"],
+                "ocr_error_pages": stats["ocr_error_pages"],
                 "chunks": len(file_chunks),
                 "needs_ocr_pages": needs_ocr,
             }
         )
         if needs_ocr:
             report["needs_ocr"][pdf_path.name] = needs_ocr
+        print(
+            f"[ingest] {pdf_path.name}: text={stats['text_pages']} "
+            f"ocr={stats['ocr_pages']} remaining={len(needs_ocr)} chunks={len(file_chunks)}",
+            flush=True,
+        )
     report["total_chunks"] = len(chunks)
+    report["total_text_pages"] = sum(item["text_pages"] for item in report["files"])
+    report["total_ocr_pages"] = sum(item["ocr_pages"] for item in report["files"])
+    report["total_needs_ocr_pages"] = sum(len(item["needs_ocr_pages"]) for item in report["files"])
     return chunks, report
 
 
@@ -143,6 +243,7 @@ def chunks_to_documents(chunks: list[DocumentChunk]) -> list[Document]:
                 "chunk_index": chunk.chunk_index,
                 "language": chunk.language,
                 "content_type": chunk.content_type,
+                "extraction_method": chunk.extraction_method,
             },
         )
         for chunk in chunks

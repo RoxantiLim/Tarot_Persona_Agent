@@ -26,7 +26,9 @@ def main() -> None:
         return
 
     documents = chunks_to_documents(chunks)
-    build_vector_store(config, documents)
+    store = build_vector_store(config, documents)
+    report["vector_store_backend"] = getattr(store, "backend_name", "unknown")
+    write_processed_outputs(config, chunks, report)
     print("入库完成")
     print(json.dumps(report, ensure_ascii=False, indent=2))
 

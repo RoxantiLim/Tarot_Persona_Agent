@@ -45,6 +45,7 @@ class BgeM3Embeddings:
     def embed_documents(self, texts: list[str]) -> list[list[float]]:
         vectors = self.model.encode(
             texts,
+            batch_size=8,
             normalize_embeddings=True,
             show_progress_bar=True,
         )

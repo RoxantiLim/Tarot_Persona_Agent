@@ -328,6 +328,8 @@ def render_ingest_report(config: AppConfig) -> None:
             {
                 "文件": item.get("file", ""),
                 "已提取页数": item.get("text_pages", 0),
+                "OCR pages": item.get("ocr_pages", 0),
+                "OCR cache hits": item.get("ocr_cache_hits", 0),
                 "chunks": item.get("chunks", 0),
                 "需 OCR 页数": len(needs_ocr_pages),
                 "状态": "已入库" if item.get("chunks", 0) else "未入库/需 OCR",
@@ -733,6 +735,9 @@ def status_page(config: AppConfig) -> None:
             "project_root": str(config.project_root),
             "doc_dir": str(config.doc_dir),
             "chroma_dir": str(config.chroma_dir),
+            "vector_store_backend": config.vector_store_backend,
+            "retrieval_mode": config.retrieval_mode,
+            "pdf_ocr_enabled": config.pdf_ocr_enabled,
             "cases_dir": str(config.cases_dir),
             "model_cache_dir": str(config.model_cache_dir),
         }

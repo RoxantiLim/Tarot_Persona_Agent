@@ -12,6 +12,7 @@ class DocumentChunk(BaseModel):
     chunk_index: int
     language: Literal["zh", "en", "mixed", "unknown"] = "unknown"
     content_type: str = "其他"
+    extraction_method: Literal["pdf_text", "ocr"] = "pdf_text"
     text: str
 
 
