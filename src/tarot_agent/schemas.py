@@ -13,6 +13,9 @@ class DocumentChunk(BaseModel):
     language: Literal["zh", "en", "mixed", "unknown"] = "unknown"
     content_type: str = "其他"
     extraction_method: Literal["pdf_text", "ocr"] = "pdf_text"
+    quality_status: Literal["keep", "downrank", "exclude"] = "keep"
+    quality_reasons: list[str] = Field(default_factory=list)
+    retrieval_weight: float = 1.0
     text: str
 
 

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from pathlib import Path
 
 from .config import AppConfig
 from .documents import Document
+from .knowledge_filter import assess_chunk_quality, load_filter_overrides, quality_report
 from .schemas import DocumentChunk
 
 
@@ -136,6 +138,7 @@ def split_page_into_chunks(
     text: str,
     max_chars: int = 900,
     extraction_method: str = "pdf_text",
+    overrides: dict[tuple[str, int], str] | None = None,
 ) -> list[DocumentChunk]:
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     paragraphs = split_oversized_paragraphs(paragraphs, max_chars)
@@ -150,9 +153,11 @@ def split_page_into_chunks(
             current = paragraph
     if current:
         chunks.append(current)
+    chunks = merge_short_chunks(chunks)
 
     output = []
     for idx, chunk_text in enumerate(chunks):
+        quality = assess_chunk_quality(chunk_text, source_file, page, overrides)
         output.append(
             DocumentChunk(
                 chunk_id=f"{Path(source_file).stem}-p{page}-c{idx}",
@@ -162,6 +167,9 @@ def split_page_into_chunks(
                 language=detect_language(chunk_text),
                 content_type=classify_content(chunk_text),
                 extraction_method=extraction_method,
+                quality_status=quality.status,
+                quality_reasons=quality.reasons,
+                retrieval_weight=quality.weight,
                 text=chunk_text,
             )
         )
@@ -171,17 +179,55 @@ def split_page_into_chunks(
 def split_oversized_paragraphs(paragraphs: list[str], max_chars: int) -> list[str]:
     output = []
     for paragraph in paragraphs:
-        if len(paragraph) <= max_chars:
-            output.append(paragraph)
-            continue
-        for start in range(0, len(paragraph), max_chars):
-            output.append(paragraph[start : start + max_chars])
+        output.extend(split_text_at_boundaries(paragraph, max_chars))
     return output
+
+
+def split_text_at_boundaries(text: str, max_chars: int) -> list[str]:
+    parts = []
+    remaining = text.strip()
+    while len(remaining) > max_chars:
+        window = remaining[: max_chars + 1]
+        sentence_breaks = [
+            match.end()
+            for match in re.finditer(r"[.!?。！？；;](?:\s+|$)|\n+", window)
+            if match.end() >= max_chars // 2
+        ]
+        boundary = sentence_breaks[-1] if sentence_breaks else window.rfind(" ")
+        if boundary < max_chars // 2:
+            boundary = max_chars
+        parts.append(remaining[:boundary].strip())
+        remaining = remaining[boundary:].strip()
+    if remaining:
+        parts.append(remaining)
+    return merge_short_chunks(parts)
+
+
+def merge_short_chunks(chunks: list[str], min_chars: int = 80) -> list[str]:
+    merged = []
+    pending = ""
+    for chunk in (item.strip() for item in chunks if item.strip()):
+        if pending:
+            chunk = f"{pending}\n\n{chunk}"
+            pending = ""
+        if len(chunk) < min_chars and not merged:
+            pending = chunk
+        elif len(chunk) < min_chars:
+            merged[-1] = f"{merged[-1]}\n\n{chunk}"
+        else:
+            merged.append(chunk)
+    if pending:
+        if merged:
+            merged[-1] = f"{merged[-1]}\n\n{pending}"
+        else:
+            merged.append(pending)
+    return merged
 
 
 def ingest_pdfs_to_chunks(config: AppConfig) -> tuple[list[DocumentChunk], dict]:
     chunks: list[DocumentChunk] = []
     report = {"files": [], "total_chunks": 0, "needs_ocr": {}}
+    overrides = load_filter_overrides(config)
     pdfs = sorted(config.doc_dir.glob("*.pdf"))
     for pdf_path in pdfs:
         print(f"[ingest] processing {pdf_path.name}", flush=True)
@@ -194,9 +240,11 @@ def ingest_pdfs_to_chunks(config: AppConfig) -> tuple[list[DocumentChunk], dict]
                     page,
                     text,
                     extraction_method=extraction_method,
+                    overrides=overrides,
                 )
             )
         chunks.extend(file_chunks)
+        status_counts = Counter(chunk.quality_status for chunk in file_chunks)
         report["files"].append(
             {
                 "file": pdf_path.name,
@@ -204,7 +252,10 @@ def ingest_pdfs_to_chunks(config: AppConfig) -> tuple[list[DocumentChunk], dict]
                 "ocr_pages": stats["ocr_pages"],
                 "ocr_cache_hits": stats["ocr_cache_hits"],
                 "ocr_error_pages": stats["ocr_error_pages"],
-                "chunks": len(file_chunks),
+                "chunks": status_counts["keep"] + status_counts["downrank"],
+                "extracted_chunks": len(file_chunks),
+                "excluded_chunks": status_counts["exclude"],
+                "downranked_chunks": status_counts["downrank"],
                 "needs_ocr_pages": needs_ocr,
             }
         )
@@ -212,10 +263,13 @@ def ingest_pdfs_to_chunks(config: AppConfig) -> tuple[list[DocumentChunk], dict]
             report["needs_ocr"][pdf_path.name] = needs_ocr
         print(
             f"[ingest] {pdf_path.name}: text={stats['text_pages']} "
-            f"ocr={stats['ocr_pages']} remaining={len(needs_ocr)} chunks={len(file_chunks)}",
+            f"ocr={stats['ocr_pages']} remaining={len(needs_ocr)} "
+            f"indexed={status_counts['keep'] + status_counts['downrank']} "
+            f"excluded={status_counts['exclude']}",
             flush=True,
         )
-    report["total_chunks"] = len(chunks)
+    report.update(quality_report(chunks))
+    report["filter_override_count"] = len(overrides)
     report["total_text_pages"] = sum(item["text_pages"] for item in report["files"])
     report["total_ocr_pages"] = sum(item["ocr_pages"] for item in report["files"])
     report["total_needs_ocr_pages"] = sum(len(item["needs_ocr_pages"]) for item in report["files"])
@@ -244,7 +298,11 @@ def chunks_to_documents(chunks: list[DocumentChunk]) -> list[Document]:
                 "language": chunk.language,
                 "content_type": chunk.content_type,
                 "extraction_method": chunk.extraction_method,
+                "quality_status": chunk.quality_status,
+                "quality_reasons": ",".join(chunk.quality_reasons),
+                "retrieval_weight": chunk.retrieval_weight,
             },
         )
         for chunk in chunks
+        if chunk.quality_status != "exclude"
     ]

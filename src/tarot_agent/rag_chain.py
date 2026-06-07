@@ -11,13 +11,21 @@ from .schemas import RAGResult
 from .vector_store import index_exists, load_vector_store
 
 
-def retrieve_context(config: AppConfig, query: str, top_k: int = 5) -> list[Document]:
+def retrieve_context(
+    config: AppConfig,
+    query: str,
+    top_k: int = 5,
+    profile: str = "knowledge",
+) -> list[Document]:
     if not index_exists(config):
         return []
+    candidate_k = max(top_k * 4, top_k)
     if config.retrieval_mode == "keyword":
-        return keyword_search(config, query, top_k)
-    store = load_vector_store(config)
-    return store.similarity_search(query, k=top_k)
+        candidates = keyword_search(config, query, candidate_k)
+    else:
+        store = load_vector_store(config)
+        candidates = store.similarity_search(query, k=candidate_k)
+    return rerank_documents(candidates, top_k=top_k, profile=profile)
 
 
 def keyword_search(config: AppConfig, query: str, top_k: int = 5) -> list[Document]:
@@ -37,10 +45,58 @@ def keyword_search(config: AppConfig, query: str, top_k: int = 5) -> list[Docume
             metadata_blob = " ".join(str(value) for value in doc.metadata.values()).lower()
             score = sum(term_score(term, blob, metadata_blob) for term in terms)
             if score:
+                doc.metadata["retrieval_score"] = score
                 scored.append((score, doc))
 
     scored.sort(key=lambda item: item[0], reverse=True)
     return [doc for _, doc in scored[:top_k]]
+
+
+def rerank_documents(
+    documents: list[Document],
+    top_k: int,
+    profile: str = "knowledge",
+    max_chunks_per_page: int = 2,
+) -> list[Document]:
+    if profile not in {"knowledge", "agent"}:
+        raise ValueError(f"Unsupported retrieval profile: {profile}")
+
+    ranked = []
+    for doc in documents:
+        metadata = dict(doc.metadata)
+        quality_status = str(metadata.get("quality_status", "keep"))
+        if quality_status == "exclude":
+            continue
+        score = float(metadata.get("retrieval_score", 0.0))
+        weight = float(metadata.get("retrieval_weight", 1.0))
+        metadata["rerank_score"] = score * weight
+        ranked.append(Document(page_content=doc.page_content, metadata=metadata))
+
+    ranked.sort(key=lambda doc: float(doc.metadata["rerank_score"]), reverse=True)
+    if profile == "agent":
+        keep = [doc for doc in ranked if doc.metadata.get("quality_status", "keep") == "keep"]
+        downranked = [doc for doc in ranked if doc.metadata.get("quality_status") == "downrank"]
+        return limit_chunks_per_page([*keep, *downranked], top_k, max_chunks_per_page)
+    return limit_chunks_per_page(ranked, top_k, max_chunks_per_page)
+
+
+def limit_chunks_per_page(
+    documents: list[Document],
+    top_k: int,
+    max_chunks_per_page: int,
+) -> list[Document]:
+    selected = []
+    page_counts: dict[tuple[str, object], int] = {}
+    for doc in documents:
+        metadata = doc.metadata
+        page_key = (str(metadata.get("source_file", "")), metadata.get("page"))
+        if page_counts.get(page_key, 0) >= max_chunks_per_page:
+            continue
+        selected.append(doc)
+        page_counts[page_key] = page_counts.get(page_key, 0) + 1
+        if len(selected) >= top_k:
+            break
+    return selected
 
 
 def query_terms(query: str) -> set[str]:

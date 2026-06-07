@@ -20,17 +20,17 @@ def main() -> None:
 
     chunks, report = ingest_pdfs_to_chunks(config)
     write_processed_outputs(config, chunks, report)
-    if not chunks:
+    documents = chunks_to_documents(chunks)
+    if not documents:
         print("没有生成任何 chunk。请检查 PDF 是否为扫描版或是否安装 PyMuPDF。")
-        print(json.dumps(report, ensure_ascii=False, indent=2))
+        print(json.dumps(report, ensure_ascii=True, indent=2))
         return
 
-    documents = chunks_to_documents(chunks)
     store = build_vector_store(config, documents)
     report["vector_store_backend"] = getattr(store, "backend_name", "unknown")
     write_processed_outputs(config, chunks, report)
     print("入库完成")
-    print(json.dumps(report, ensure_ascii=False, indent=2))
+    print(json.dumps(report, ensure_ascii=True, indent=2))
 
 
 if __name__ == "__main__":

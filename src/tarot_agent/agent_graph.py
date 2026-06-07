@@ -41,7 +41,7 @@ def parse_user_input(state: ReadingState) -> ReadingState:
 
 def retrieve_tarot_knowledge(config: AppConfig):
     def node(state: ReadingState) -> ReadingState:
-        state["knowledge_docs"] = retrieve_context(config, state["query"], top_k=5)
+        state["knowledge_docs"] = retrieve_context(config, state["query"], top_k=5, profile="agent")
         state.setdefault("steps", []).append("retrieve_tarot_knowledge")
         return state
 

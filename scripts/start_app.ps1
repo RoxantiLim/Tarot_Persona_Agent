@@ -19,6 +19,12 @@ foreach ($Port in $ExistingPorts) {
 
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
+# The Codex shell can expose both Path and PATH on Windows. Start-Process
+# treats them as duplicate environment keys, so normalize the inherited value.
+$PathValue = [System.Environment]::GetEnvironmentVariable("Path", "Process")
+[System.Environment]::SetEnvironmentVariable("PATH", $null, "Process")
+[System.Environment]::SetEnvironmentVariable("Path", $PathValue, "Process")
+
 $Args = @(
     "-m", "streamlit", "run", "app.py",
     "--server.headless", "true",

@@ -40,7 +40,10 @@ class LocalVectorStore:
             query_vector = query_vector / query_norm
         scores = self.vectors @ query_vector
         top_indices = np.argsort(scores)[::-1][:k]
-        return [self.documents[int(idx)] for idx in top_indices]
+        return [
+            document_with_score(self.documents[int(idx)], scores[int(idx)])
+            for idx in top_indices
+        ]
 
 
 class ChromaVectorStore:
@@ -58,13 +61,17 @@ class ChromaVectorStore:
         results = self.collection.query(
             query_embeddings=[self.embeddings.embed_query(query)],
             n_results=k,
-            include=["documents", "metadatas"],
+            include=["documents", "metadatas", "distances"],
         )
         documents = results.get("documents", [[]])[0]
         metadatas = results.get("metadatas", [[]])[0]
+        distances = results.get("distances", [[]])[0]
         return [
-            Document(page_content=text, metadata=metadata or {})
-            for text, metadata in zip(documents, metadatas)
+            document_with_score(
+                Document(page_content=text, metadata=metadata or {}),
+                1.0 - float(distance),
+            )
+            for text, metadata, distance in zip(documents, metadatas, distances)
         ]
 
 
@@ -74,6 +81,12 @@ def _chroma_client(config: AppConfig):
     except ImportError as exc:
         raise RuntimeError("Missing chromadb dependency. Install requirements.txt first.") from exc
     return chromadb.PersistentClient(path=str(config.chroma_dir))
+
+
+def document_with_score(document: Document, score: float) -> Document:
+    metadata = dict(document.metadata)
+    metadata["retrieval_score"] = float(score)
+    return Document(page_content=document.page_content, metadata=metadata)
 
 
 def chroma_index_exists(config: AppConfig) -> bool:

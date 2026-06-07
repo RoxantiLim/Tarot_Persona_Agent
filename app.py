@@ -10,6 +10,7 @@ import streamlit as st
 from src.tarot_agent.agent_graph import run_persona_reading
 from src.tarot_agent.cards import MAJOR_ARCANA, MINOR_ARCANA, card_display_names, random_three_card_draw
 from src.tarot_agent.config import AppConfig, dependency_report
+from src.tarot_agent.knowledge_filter import list_filter_overrides, set_filter_override
 from src.tarot_agent.persona import DEFAULT_PERSONAS, load_persona, save_default_personas, save_persona
 from src.tarot_agent.rag_chain import answer_knowledge_query, retrieve_context
 from src.tarot_agent.schemas import AgentResult, PersonaProfile
@@ -320,7 +321,11 @@ def render_ingest_report(config: AppConfig) -> None:
         return
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    st.metric("已入库 chunks", report.get("total_chunks", 0))
+    metric_cols = st.columns(4)
+    metric_cols[0].metric("已入库 chunks", report.get("total_chunks", 0))
+    metric_cols[1].metric("提取 chunks", report.get("total_extracted_chunks", report.get("total_chunks", 0)))
+    metric_cols[2].metric("已排除", report.get("total_excluded_chunks", 0))
+    metric_cols[3].metric("已降权", report.get("total_downranked_chunks", 0))
     rows = []
     for item in report.get("files", []):
         needs_ocr_pages = item.get("needs_ocr_pages", [])
@@ -331,6 +336,9 @@ def render_ingest_report(config: AppConfig) -> None:
                 "OCR pages": item.get("ocr_pages", 0),
                 "OCR cache hits": item.get("ocr_cache_hits", 0),
                 "chunks": item.get("chunks", 0),
+                "提取 chunks": item.get("extracted_chunks", item.get("chunks", 0)),
+                "排除 chunks": item.get("excluded_chunks", 0),
+                "降权 chunks": item.get("downranked_chunks", 0),
                 "需 OCR 页数": len(needs_ocr_pages),
                 "状态": "已入库" if item.get("chunks", 0) else "未入库/需 OCR",
             }
@@ -338,7 +346,238 @@ def render_ingest_report(config: AppConfig) -> None:
     st.dataframe(rows, hide_index=True, use_container_width=True)
     with st.expander("需要 OCR 的页码明细"):
         st.json(report.get("needs_ocr", {}))
-    st.caption("说明：第一版只入库可直接提取文字的 PDF 页面；扫描页会列在 needs_ocr 中。")
+    with st.expander("过滤原因统计", expanded=True):
+        st.json(report.get("quality_reason_counts", {}))
+    render_knowledge_filter_editor(config, report)
+    st.caption("说明：扫描页会优先使用 OCR 缓存；低价值片段保留在审计报告中，但不会全部写入知识库索引。")
+
+
+def render_knowledge_filter_editor(config: AppConfig, report: dict[str, Any]) -> None:
+    st.divider()
+    st.subheader("知识库低价值资料过滤")
+    st.caption("自动规则按 chunk 判断；人工覆盖按 PDF 页面生效。保存覆盖规则后，需要重新运行入库脚本。")
+
+    review_pages = report.get("review_pages", [])
+    if review_pages:
+        overrides = list_filter_overrides(config)
+        override_map = {
+            (str(item.get("source_file", "")), int(item.get("page", 0) or 0)): str(item.get("action", ""))
+            for item in overrides
+        }
+        metric_a, metric_b, metric_c = st.columns(3)
+        metric_a.metric("待复核页面", len(review_pages))
+        metric_b.metric("已设置覆盖", len(overrides))
+        metric_c.metric("当前序号", f"{st.session_state.get('knowledge_filter_review_page', 0) + 1}/{len(review_pages)}")
+
+        with st.expander("待复核页面总览", expanded=False):
+            st.dataframe(review_pages, hide_index=True, use_container_width=True)
+
+        options = list(range(len(review_pages)))
+        select_key = "knowledge_filter_review_page"
+        pending_key = "knowledge_filter_pending_index"
+        if pending_key in st.session_state:
+            st.session_state[select_key] = min(st.session_state[pending_key], len(review_pages) - 1)
+            del st.session_state[pending_key]
+
+        selected_index = st.selectbox(
+            "选择待复核条目",
+            options,
+            format_func=lambda index: knowledge_filter_page_label(review_pages[index]),
+            key=select_key,
+        )
+        selected = review_pages[selected_index]
+
+        nav_prev, nav_next, nav_hint = st.columns([0.18, 0.18, 0.64])
+        with nav_prev:
+            if st.button("上一条", disabled=selected_index <= 0, key="knowledge_filter_prev"):
+                queue_knowledge_filter_index(selected_index - 1, len(review_pages))
+                st.rerun()
+        with nav_next:
+            if st.button("下一条", disabled=selected_index >= len(review_pages) - 1, key="knowledge_filter_next"):
+                queue_knowledge_filter_index(selected_index + 1, len(review_pages))
+                st.rerun()
+        with nav_hint:
+            st.caption("建议像案例审核一样逐条处理：看原页 → 判断 → 点击快捷按钮 → 自动进入下一条。")
+
+        left, right = st.columns([1.15, 0.85])
+        with left:
+            render_pdf_page_review_preview(config, selected)
+
+        with right:
+            render_knowledge_filter_review_detail(selected, override_map)
+            next_index = min(selected_index + 1, len(review_pages) - 1)
+            st.markdown("**审核动作**")
+            col_exclude, col_downrank, col_keep = st.columns(3)
+            with col_exclude:
+                if st.button("排除并下一条", type="primary", key="knowledge_filter_force_exclude"):
+                    save_knowledge_filter_override(config, selected, "force_exclude", next_index, len(review_pages))
+            with col_downrank:
+                if st.button("降级并下一条", key="knowledge_filter_force_downrank"):
+                    save_knowledge_filter_override(config, selected, "force_downrank", next_index, len(review_pages))
+            with col_keep:
+                if st.button("完全入库并下一条", key="knowledge_filter_force_keep"):
+                    save_knowledge_filter_override(config, selected, "force_keep", next_index, len(review_pages))
+            col_clear, col_save = st.columns(2)
+            with col_clear:
+                if st.button("清除人工覆盖并下一条", key="knowledge_filter_clear"):
+                    save_knowledge_filter_override(config, selected, "clear", next_index, len(review_pages))
+            with col_save:
+                action_label = st.selectbox(
+                    "其他动作",
+                    ["排除", "降级", "完全入库", "清除人工覆盖"],
+                    help="仅保存不会跳到下一条，适合需要反复确认同一页时使用。",
+                    key="knowledge_filter_manual_action",
+                )
+                if st.button("仅保存当前页", key="knowledge_filter_save_current"):
+                    action = knowledge_filter_action_from_label(action_label)
+                    save_knowledge_filter_override(config, selected, action, selected_index, len(review_pages))
+
+            st.info(
+                "保存后会写入本地覆盖文件。要让索引真正生效，还需要重新运行 "
+                "`python scripts\\ingest_documents.py`。"
+            )
+    else:
+        st.info("当前报告中没有需要人工复核的低价值页面。")
+
+    overrides = list_filter_overrides(config)
+    with st.expander(f"当前本地人工覆盖规则（{len(overrides)}）"):
+        if overrides:
+            st.dataframe(overrides, hide_index=True, use_container_width=True)
+        else:
+            st.info("尚未设置人工覆盖规则。")
+
+
+def render_knowledge_filter_review_detail(
+    row: dict[str, Any],
+    override_map: dict[tuple[str, int], str],
+) -> None:
+    source_file = str(row.get("source_file", ""))
+    page = int(row.get("page", 0) or 0)
+    current_override = override_map.get((source_file, page), "未设置")
+    st.markdown("**当前条目**")
+    st.json(
+        {
+            "source_file": source_file,
+            "page": page,
+            "quality_status": row.get("quality_status", ""),
+            "quality_reasons": row.get("quality_reasons", []),
+            "current_override": knowledge_filter_action_label(current_override),
+        },
+        expanded=False,
+    )
+    st.markdown("**抽取文本预览**")
+    st.text_area(
+        "复核文本",
+        value=str(row.get("preview", "")),
+        height=260,
+        disabled=True,
+        label_visibility="collapsed",
+    )
+
+
+def render_pdf_page_review_preview(config: AppConfig, row: dict[str, Any]) -> None:
+    source_file = str(row.get("source_file", ""))
+    page = int(row.get("page", 0) or 0)
+    pdf_path = config.doc_dir / source_file
+
+    st.markdown("**当前页可视化预览**")
+    if not source_file or page < 1:
+        st.warning("当前复核记录缺少文件名或页码，无法渲染 PDF 页面。")
+        return
+    if not pdf_path.exists():
+        st.warning(f"找不到原始 PDF：`Doc/{source_file}`。请确认资料文件仍在本地 Doc 目录。")
+        return
+
+    dpi = st.select_slider(
+        "预览清晰度",
+        options=[110, 150, 200, 260],
+        value=150,
+        format_func=lambda value: f"{value} DPI",
+        key=f"knowledge_filter_preview_dpi_{source_file}_{page}",
+        help="只渲染当前选中的 PDF 页，不会重新 OCR 或重建索引。",
+    )
+
+    try:
+        image_bytes, page_count = render_pdf_page_png(
+            str(pdf_path),
+            page,
+            dpi,
+            pdf_path.stat().st_mtime_ns,
+            pdf_path.stat().st_size,
+        )
+        st.image(
+            image_bytes,
+            caption=f"{source_file} / 第 {page} 页，共 {page_count} 页",
+            width="stretch",
+        )
+    except Exception as exc:
+        st.error(f"PDF 页面渲染失败：{exc}")
+
+
+@st.cache_data(show_spinner=False)
+def render_pdf_page_png(
+    pdf_path: str,
+    page: int,
+    dpi: int,
+    mtime_ns: int,
+    file_size: int,
+) -> tuple[bytes, int]:
+    del mtime_ns, file_size
+    try:
+        import fitz
+    except ImportError as exc:
+        raise RuntimeError("缺少 PyMuPDF，无法渲染 PDF 页面。") from exc
+
+    with fitz.open(pdf_path) as doc:
+        if page < 1 or page > len(doc):
+            raise ValueError(f"页码超出范围：第 {page} 页，PDF 共 {len(doc)} 页。")
+        pixmap = doc[page - 1].get_pixmap(dpi=dpi, alpha=False)
+        return pixmap.tobytes("png"), len(doc)
+
+
+def save_knowledge_filter_override(
+    config: AppConfig,
+    row: dict[str, Any],
+    action: str,
+    next_index: int,
+    total_rows: int,
+) -> None:
+    set_filter_override(config, str(row["source_file"]), int(row["page"]), action)
+    queue_knowledge_filter_index(next_index, total_rows)
+    st.success("已保存本地覆盖规则。")
+    st.rerun()
+
+
+def knowledge_filter_action_from_label(label: str) -> str:
+    return {
+        "排除": "force_exclude",
+        "降级": "force_downrank",
+        "完全入库": "force_keep",
+        "清除人工覆盖": "clear",
+    }[label]
+
+
+def knowledge_filter_action_label(action: str) -> str:
+    return {
+        "force_exclude": "排除",
+        "force_downrank": "降级",
+        "force_keep": "完全入库",
+        "clear": "清除人工覆盖",
+        "未设置": "未设置",
+        "": "未设置",
+    }.get(action, action)
+
+
+def queue_knowledge_filter_index(requested_index: int, total_rows: int) -> None:
+    if total_rows <= 0:
+        st.session_state["knowledge_filter_pending_index"] = 0
+        return
+    st.session_state["knowledge_filter_pending_index"] = max(0, min(requested_index, total_rows - 1))
+
+
+def knowledge_filter_page_label(row: dict[str, Any]) -> str:
+    reasons = ", ".join(row.get("quality_reasons", []))
+    return f"{row.get('source_file', 'unknown')} / 第 {row.get('page', '?')} 页 / {row.get('quality_status', '?')} / {reasons}"
 
 
 def render_case_status(config: AppConfig) -> None:

@@ -19,6 +19,7 @@ data/indexes/
 data/processed/
 data/reports/
 data/*.log
+data/knowledge_filter_overrides.json
 data/cases/*_candidates.jsonl
 data/cases/*_reviewed.jsonl
 data/cases/*_needs_review.jsonl
