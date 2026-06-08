@@ -1,13 +1,16 @@
 # Tarot Knowledge Companion + Tarot Persona Agent
 
-一个本地 Streamlit 多页面应用，分两阶段建设：
+一个本地塔罗知识库与多风格占卜 Agent 项目，分两层使用：
 
-- **塔罗学习知识库助手**：从 PDF 资料构建 RAG 知识库，用于牌意查询、主题学习和资料检索。
-- **多风格塔罗占卜 Agent**：复用知识库，结合占卜师案例库和 persona profile，生成不同风格的三张无牌阵解读。
+- **Streamlit 内部后台**：用于 PDF 入库、人工复核、案例审核、画像编辑和项目状态检查。
+- **Next.js 用户前端**：用于展示型首页、知识库助手和三牌占卜 Agent。
+- **FastAPI 本机后端**：把现有 Python RAG/Agent 能力包装给前端调用。
 
 ## 当前实现状态
 
-- 已实现 Streamlit 单应用多页面入口。
+- 已实现 Streamlit 单应用多页面后台入口。
+- 已实现 FastAPI 本机 API 入口。
+- 已实现 Next.js + TypeScript + Tailwind CSS 展示型用户前端。
 - 已实现 PDF 文本抽取、页内段落切块、入库报告。
 - 已实现 `BAAI/bge-m3` 本地 embedding。
 - 默认使用本地 numpy 余弦向量索引，避免 Windows 上 ChromaDB Rust 查询层不稳定。
@@ -42,7 +45,7 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1
 E:\for-LLM\AUXI\Tarot_Persona_Agent\.venv\Scripts\python.exe scripts\ingest_documents.py
 ```
 
-5. 启动应用：
+5. 启动 Streamlit 内部后台：
 
 ```powershell
 E:\for-LLM\AUXI\Tarot_Persona_Agent\.venv\Scripts\python.exe -m streamlit run app.py --server.address 127.0.0.1 --server.port 8501
@@ -53,6 +56,50 @@ E:\for-LLM\AUXI\Tarot_Persona_Agent\.venv\Scripts\python.exe -m streamlit run ap
 ```text
 http://127.0.0.1:8501
 ```
+
+## 本机展示型前端
+
+第一阶段前端只面向本机使用，不做公网部署。
+
+启动 FastAPI 后端：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_api.ps1
+```
+
+默认地址：
+
+```text
+http://127.0.0.1:8787
+http://127.0.0.1:8787/docs
+```
+
+启动 Next.js 用户前端：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_web.ps1
+```
+
+默认地址：
+
+```text
+http://127.0.0.1:3000
+```
+
+页面：
+
+```text
+/           首页
+/reading    三牌占卜 Agent
+/knowledge  知识库助手
+/status     本机状态
+```
+
+说明：
+
+- Streamlit 后台仍然保留在 `http://127.0.0.1:8501`。
+- DeepSeek API Key 只保留在 Python `.env` 中，不写入前端。
+- 前端默认连接 `http://127.0.0.1:8787`；如需修改，可设置 `NEXT_PUBLIC_API_BASE_URL`。
 
 ## 第一版边界
 
@@ -67,6 +114,8 @@ http://127.0.0.1:8501
 
 ```text
 app.py
+api/
+web/
 src/tarot_agent/
 scripts/
 data/

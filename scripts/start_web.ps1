@@ -1,16 +1,16 @@
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
-$Python = "E:\for-LLM\AUXI\Tarot_Persona_Agent\.venv-clean\Scripts\python.exe"
+$WebRoot = Join-Path $ProjectRoot "web"
 $LogsDir = Join-Path $ProjectRoot "logs"
-$StdOutLog = Join-Path $LogsDir "streamlit.out.log"
-$StdErrLog = Join-Path $LogsDir "streamlit.err.log"
+$StdOutLog = Join-Path $LogsDir "web.out.log"
+$StdErrLog = Join-Path $LogsDir "web.err.log"
 
-if (-not (Test-Path $Python)) {
-    throw "Python venv not found: $Python. Run scripts\setup_env.ps1 first."
+if (-not (Test-Path (Join-Path $WebRoot "package.json"))) {
+    throw "Next.js app not found: $WebRoot"
 }
 
-$ExistingPorts = Get-NetTCPConnection -LocalPort 8501 -ErrorAction SilentlyContinue |
+$ExistingPorts = Get-NetTCPConnection -LocalPort 3000 -ErrorAction SilentlyContinue |
     Where-Object { $_.State -eq "Listen" -and $_.OwningProcess }
 
 foreach ($Connection in $ExistingPorts) {
@@ -19,32 +19,27 @@ foreach ($Connection in $ExistingPorts) {
 
 New-Item -ItemType Directory -Force -Path $LogsDir | Out-Null
 
-# The Codex shell can expose both Path and PATH on Windows. Start-Process
-# treats them as duplicate environment keys, so normalize the inherited value.
 $PathValue = [System.Environment]::GetEnvironmentVariable("Path", "Process")
 [System.Environment]::SetEnvironmentVariable("PATH", $null, "Process")
 [System.Environment]::SetEnvironmentVariable("Path", $PathValue, "Process")
 
-$Args = @(
-    "-m", "streamlit", "run", "app.py",
-    "--server.headless", "true",
-    "--server.address", "127.0.0.1",
-    "--server.port", "8501",
-    "--browser.gatherUsageStats", "false"
-)
+$env:npm_config_cache = "E:\for-LLM\AUXI\npm-cache"
+$env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:8787"
+$Npm = "npm.cmd"
+$Args = @("run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3000")
 
 $Process = Start-Process `
-    -FilePath $Python `
+    -FilePath $Npm `
     -ArgumentList $Args `
-    -WorkingDirectory $ProjectRoot `
+    -WorkingDirectory $WebRoot `
     -WindowStyle Hidden `
     -RedirectStandardOutput $StdOutLog `
     -RedirectStandardError $StdErrLog `
     -PassThru
 Start-Sleep -Seconds 5
 
-Write-Host "Streamlit should be available at:"
-Write-Host "  http://127.0.0.1:8501"
+Write-Host "Next.js frontend should be available at:"
+Write-Host "  http://127.0.0.1:3000"
 Write-Host "Process id:"
 Write-Host "  $($Process.Id)"
 Write-Host "Logs:"

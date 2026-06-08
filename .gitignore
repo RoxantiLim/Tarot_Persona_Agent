@@ -13,6 +13,8 @@ __pycache__/
 .venv/
 venv/
 env/
+.agents/
+skills-lock.json
 
 # Generated data and model/index artifacts
 data/indexes/
@@ -31,9 +33,17 @@ logs/
 # Raw private/copyrighted local materials
 Doc/
 Tarotist-*/
+Cards-png/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Next.js local frontend
+web/node_modules/
+web/.next/
+web/out/
+web/.env*.local
+web/tsconfig.tsbuildinfo
 
 # OS / editor
 .DS_Store
