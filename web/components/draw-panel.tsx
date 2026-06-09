@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type KeyboardEvent, type MouseEvent, type TouchEvent } from "react";
+import { useEffect, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { CardImage } from "@/components/card-image";
 import { CardPicker } from "@/components/card-picker";
 import { randomCardDraw, splitCardName } from "@/lib/card-assets";
@@ -54,12 +54,7 @@ export function DrawPanel({ cards, value, onChange, isSubmitting = false, submit
     onChange(randomCardDraw(cards, normalizedCards));
   }
 
-  function handleDrawMouseDown(event: MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    drawCards();
-  }
-
-  function handleDrawTouchStart(event: TouchEvent<HTMLButtonElement>) {
+  function handleDrawPointerDown(event: PointerEvent<HTMLButtonElement>) {
     event.preventDefault();
     drawCards();
   }
@@ -117,8 +112,7 @@ export function DrawPanel({ cards, value, onChange, isSubmitting = false, submit
             <div className="relative z-20 flex flex-wrap items-center justify-center gap-3 rounded-3xl border border-white/10 bg-ink/85 p-4 shadow-glow lg:justify-start">
               <button
                 type="button"
-                onMouseDown={handleDrawMouseDown}
-                onTouchStart={handleDrawTouchStart}
+                onPointerDown={handleDrawPointerDown}
                 onKeyDown={handleDrawKeyDown}
                 disabled={!cards.length || isAnimating}
                 className="min-w-36 rounded-full border border-gold/45 bg-night px-6 py-3 font-semibold text-gold transition-colors duration-150 hover:bg-gold/10 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-gold/40"

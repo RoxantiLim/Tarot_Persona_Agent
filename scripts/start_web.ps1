@@ -24,7 +24,7 @@ $PathValue = [System.Environment]::GetEnvironmentVariable("Path", "Process")
 [System.Environment]::SetEnvironmentVariable("Path", $PathValue, "Process")
 
 $env:npm_config_cache = "E:\for-LLM\AUXI\npm-cache"
-$env:NEXT_PUBLIC_API_BASE_URL = "http://127.0.0.1:8787"
+Remove-Item Env:\NEXT_PUBLIC_API_BASE_URL -ErrorAction SilentlyContinue
 $Npm = "npm.cmd"
 $Args = @("run", "dev", "--", "--hostname", "127.0.0.1", "--port", "3000")
 
