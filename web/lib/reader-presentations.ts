@@ -10,7 +10,7 @@ export type ReaderPresentation = {
 const readerPresentations: Record<string, Omit<ReaderPresentation, "description">> = {
   tarotist_1: {
     title: "清晰判断",
-    badge: "直接",
+    badge: "坦诚",
     motif: "sun",
   },
   tarotist_2: {

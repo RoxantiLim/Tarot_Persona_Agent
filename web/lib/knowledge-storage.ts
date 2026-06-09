@@ -4,8 +4,8 @@ import type { KnowledgeResponse } from "@/lib/types";
 export const modes = ["牌意查询", "主题学习", "资料检索"] as const;
 export const modeLabels: Record<KnowledgeMode, string> = {
   牌意查询: "查牌意",
-  主题学习: "按主题学",
-  资料检索: "查出处",
+  主题学习: "学主题",
+  资料检索: "搜资料",
 };
 export const orientations = ["不限定", "正位", "逆位"];
 export const topics = ["通用", "感情", "事业", "学习", "人际", "灵性成长"];

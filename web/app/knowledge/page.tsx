@@ -1,6 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import { CardImage } from "@/components/card-image";
+import { CardPicker } from "@/components/card-picker";
 import { HistoryList } from "@/components/history-list";
 import { LoadingButton } from "@/components/loading-button";
 import { ResultPanel } from "@/components/result-panel";
@@ -27,6 +29,12 @@ import {
   startKnowledgeTask,
   subscribeKnowledgeTask,
 } from "@/lib/knowledge-task-store";
+
+const modeDescriptions: Record<KnowledgeMode, string> = {
+  牌意查询: "围绕一张牌理解含义",
+  主题学习: "按主题整理学习笔记",
+  资料检索: "直接查找资料出处",
+};
 
 export default function KnowledgePage() {
   const [cards, setCards] = useState<string[]>([]);
@@ -191,53 +199,61 @@ export default function KnowledgePage() {
         <p className="mt-3 text-sm leading-6 text-cream/60">输入牌名、主题，或一段关键词，查看相关解释与出处。</p>
 
         <form onSubmit={submit} className="mt-6 space-y-5">
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid gap-3 md:grid-cols-3" role="tablist" aria-label="知识库任务">
             {modes.map((item) => (
               <button
                 key={item}
                 type="button"
+                role="tab"
+                aria-selected={mode === item}
                 onClick={() => setMode(item)}
-                className={`rounded-full px-3 py-2 text-sm transition ${mode === item ? "bg-gold text-ink" : "bg-white/10 text-cream/70 hover:bg-white/15"}`}
+                className={`rounded-3xl border p-4 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-gold/30 ${
+                  mode === item ? "border-gold/70 bg-gold/15 text-gold" : "border-white/10 bg-white/[0.06] text-cream/70 hover:border-gold/30 hover:bg-white/[0.09]"
+                }`}
               >
-                {modeLabels[item]}
+                <span className="block text-base font-semibold">{modeLabels[item]}</span>
+                <span className={`mt-2 block text-sm leading-6 ${mode === item ? "text-gold/75" : "text-cream/45"}`}>{modeDescriptions[item]}</span>
               </button>
             ))}
           </div>
 
           {mode === "牌意查询" ? (
-            <div className="grid gap-3">
-              <select value={cardName} onChange={(event) => setCardName(event.target.value)} className="rounded-xl border border-white/10 bg-night px-3 py-3 text-cream outline-none focus:border-gold/50">
-                {cards.map((card) => (
-                  <option key={card} value={card}>
-                    {card}
-                  </option>
-                ))}
-              </select>
-              <div className="grid gap-3 md:grid-cols-2">
-                <select value={orientation} onChange={(event) => setOrientation(event.target.value)} className="rounded-xl border border-white/10 bg-night px-3 py-3 text-cream outline-none focus:border-gold/50">
-                  {orientations.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-                <select value={topic} onChange={(event) => setTopic(event.target.value)} className="rounded-xl border border-white/10 bg-night px-3 py-3 text-cream outline-none focus:border-gold/50">
-                  {topics.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
+            <div className="space-y-4">
+              <div className="grid gap-4 rounded-3xl border border-white/10 bg-ink/60 p-4 md:grid-cols-[11rem_minmax(0,1fr)] md:items-start">
+                <div className="flex justify-center md:justify-start">
+                  <CardImage card={cardName ? { name: cardName, orientation: orientation === "逆位" ? "逆位" : "正位" } : undefined} mode={cardName ? "face" : "back"} size="lg" className="mx-auto md:mx-0" />
+                </div>
+                <div className="space-y-3">
+                  <CardPicker cards={cards} value={cardName} onChange={setCardName} label="选择要查询的牌" id="knowledge-card" layout="compact" />
+                  <div className="px-4">
+                    <button
+                      type="submit"
+                      disabled={isQuerying}
+                      className="w-full rounded-full bg-gold px-6 py-3 font-semibold text-ink shadow-glow transition-colors duration-150 hover:bg-gold/90 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:ring-2 focus-visible:ring-gold/40"
+                    >
+                      {isQuerying ? "查询中…" : "开始查询"}
+                    </button>
+                  </div>
+                </div>
               </div>
+              <ChoiceGroup label="正逆位" value={orientation} options={orientations} onChange={setOrientation} />
+              <ChoiceGroup label="主题" value={topic} options={topics} onChange={setTopic} />
             </div>
           ) : null}
 
-          <textarea
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={mode === "资料检索" ? "例如：韦斯康提 米兰 公爵 塔罗 历史" : "例如：圣杯六正位在感情复合里怎么理解？"}
-            className="min-h-32 w-full rounded-2xl border border-white/10 bg-night px-4 py-3 text-cream outline-none focus:border-gold/50"
-          />
+          {mode === "主题学习" ? <ChoiceGroup label="学习主题" value={topic} options={topics} onChange={setTopic} /> : null}
+
+          <label className="block space-y-2 text-sm text-cream/70">
+            {mode === "资料检索" ? "搜索关键词" : mode === "主题学习" ? "补充关键词" : "补充问题"}
+            <textarea
+              name="knowledge-query"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder={mode === "资料检索" ? "例如：韦斯康提 米兰 公爵 塔罗 历史…" : mode === "主题学习" ? "例如：宫廷牌、四元素、关系牌阵…" : "例如：圣杯六正位在感情复合里怎么理解…"}
+              autoComplete="off"
+              className="min-h-32 w-full rounded-2xl border border-white/10 bg-night px-4 py-3 text-cream outline-none transition-colors duration-150 placeholder:text-cream/30 focus-visible:border-gold/60 focus-visible:ring-2 focus-visible:ring-gold/20"
+            />
+          </label>
 
           <div className="space-y-3">
             <p className="text-sm text-cream/60">参考范围</p>
@@ -247,10 +263,12 @@ export default function KnowledgePage() {
                   key={level.value}
                   type="button"
                   onClick={() => setTopK(level.value)}
-                  className={`rounded-2xl px-3 py-3 text-left transition ${topK === level.value ? "bg-gold text-ink" : "bg-white/10 text-cream/70 hover:bg-white/15"}`}
+                  className={`rounded-2xl border px-3 py-3 text-left transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-gold/30 ${
+                    topK === level.value ? "border-gold/70 bg-gold/15 text-gold" : "border-white/10 bg-white/[0.06] text-cream/70 hover:border-gold/30 hover:bg-white/[0.09]"
+                  }`}
                 >
                   <span className="block text-sm font-semibold">{level.label}</span>
-                  <span className={`mt-1 block text-xs ${topK === level.value ? "text-ink/70" : "text-cream/45"}`}>{level.description}</span>
+                  <span className={`mt-1 block text-xs ${topK === level.value ? "text-gold/75" : "text-cream/45"}`}>{level.description}</span>
                 </button>
               ))}
             </div>
@@ -263,7 +281,7 @@ export default function KnowledgePage() {
             </button>
           </div>
 
-          <LoadingButton isLoading={isQuerying} loadingText="查询中…">开始查询</LoadingButton>
+          {mode !== "牌意查询" ? <LoadingButton isLoading={isQuerying} loadingText="查询中…">开始查询</LoadingButton> : null}
         </form>
 
         <HistoryList
@@ -286,5 +304,27 @@ export default function KnowledgePage() {
         <ResultPanel title="查询结果" answer={result?.answer ?? ""} error={result?.error} documents={result?.documents ?? []} />
       </div>
     </div>
+  );
+}
+
+function ChoiceGroup({ label, value, options, onChange }: { label: string; value: string; options: readonly string[]; onChange: (value: string) => void }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="text-sm text-cream/60">{label}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => onChange(option)}
+            className={`rounded-full border px-4 py-2 text-sm font-semibold transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-gold/30 ${
+              value === option ? "border-gold/70 bg-gold text-ink" : "border-white/10 bg-white/[0.06] text-cream/65 hover:border-gold/30 hover:bg-white/[0.09] hover:text-cream"
+            }`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </fieldset>
   );
 }

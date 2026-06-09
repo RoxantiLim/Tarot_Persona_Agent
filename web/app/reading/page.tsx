@@ -1,9 +1,8 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState, useSyncExternalStore } from "react";
-import { CardSelector } from "@/components/card-selector";
+import { DrawPanel } from "@/components/draw-panel";
 import { HistoryList } from "@/components/history-list";
-import { LoadingButton } from "@/components/loading-button";
 import { ReaderPicker } from "@/components/reader-picker";
 import { ResultPanel } from "@/components/result-panel";
 import { apiGet } from "@/lib/api";
@@ -44,7 +43,6 @@ export default function ReadingPage() {
       .then(([cardPayload, readerPayload]) => {
         setCards(cardPayload.cards);
         setReaders(readerPayload.readers);
-        setSelectedCards((currentCards) => (currentCards.some((card) => card.name) ? currentCards : cardPayload.sample_draw));
         setReaderId((currentReaderId) => currentReaderId || readerPayload.readers[0]?.reader_id || "tarotist_1");
       })
       .catch((err: Error) => setError(err.message));
@@ -112,7 +110,7 @@ export default function ReadingPage() {
     clearReadingState();
     setReaderId(readers[0]?.reader_id ?? "tarotist_1");
     setQuestion("");
-    setSelectedCards(cards.length ? cards.slice(0, 3).map((name) => ({ name, orientation: "正位" })) : emptySelectedCards);
+    setSelectedCards(emptySelectedCards);
     setResult(null);
     setError("");
   }
@@ -149,6 +147,10 @@ export default function ReadingPage() {
     event.preventDefault();
     setError("");
     setResult(null);
+    if (selectedCards.length !== 3 || selectedCards.some((card) => !card.name)) {
+      setError("请先抽出三张牌，或切换到手动录入填写牌面。");
+      return;
+    }
     const readerName = selectedReader ? getReaderPresentation(selectedReader).title : "默认风格";
     startReadingTask(
       {
@@ -179,14 +181,13 @@ export default function ReadingPage() {
             className="min-h-32 w-full rounded-2xl border border-white/10 bg-night px-4 py-3 text-cream outline-none focus:border-gold/50"
           />
 
-          <CardSelector cards={cards} value={selectedCards} onChange={setSelectedCards} />
+          <DrawPanel cards={cards} value={selectedCards} onChange={setSelectedCards} isSubmitting={isGenerating} submitLabel="开始解读" submittingLabel="解读中…" />
           <div className="flex flex-wrap items-center justify-between gap-3 text-xs leading-5 text-cream/45">
             <p>解读会在本页之外继续进行，切换页面后再回来也能看到结果。</p>
             <button type="button" onClick={clearSavedState} className="rounded-full border border-white/10 px-3 py-1.5 text-cream/60 transition hover:border-gold/30 hover:text-gold">
               清空当前记录
             </button>
           </div>
-          <LoadingButton isLoading={isGenerating} loadingText="解读中…">开始解读</LoadingButton>
         </form>
 
         <HistoryList
