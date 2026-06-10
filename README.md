@@ -1,16 +1,15 @@
 # Tarot Persona Agent
 
-一个本地运行的塔罗知识库和多 Persona 占卜 Agent。它可以把塔罗资料整理成可检索的知识库，结合人工整理的占卜案例和占卜师画像，借助检索增强生成（RAG），实习综合资料学习和塔罗占卜。
+一个本地运行的塔罗知识库和多 Persona 占卜 Agent。它可以把塔罗资料整理成可检索的知识库，结合人工整理的占卜案例和占卜师画像，借助检索增强生成（RAG），实现综合资料学习和塔罗占卜。
 
 ## What this is
 
-这个仓库用于个人塔罗学习、资料复盘和实习项目展示。PDF、占卜案例、向量索引、模型缓存和 API key 都按本地私有数据处理。
+这个仓库用于个人塔罗学习、资料复盘和实习项目展示。塔罗资料、占卜案例、向量索引、模型缓存和 API key 属于本地私有数据。
 
 项目有两条使用路径。需要整理资料和检查数据时，打开 Streamlit 后台；需要体验用户侧占卜和知识库问答时，启动 FastAPI 后端和 Next.js 前端。
 
 ## Showcase
 
---Next.js 前端--
 知识库助手用于查资料和学习，占卜Agent用于体验不同占卜师风格的解读。
 
 ![Tarot Persona 首页](docs/assets/home.png)
@@ -137,6 +136,7 @@ npm.cmd run typecheck
 
 - 项目按本机运行设计，没有公网部署配置，但通过 Cloudflare Tunnel 实现了公网临时地址
 - 前端主要面向电脑端，移动端仍需优化
+- Streamlit 后台实现了多风格对比，尚未实装到Next.js 前端
 - 生成模型使用 DeepSeek OpenAI-compatible 接口
 - embedding 使用本地 `BAAI/bge-m3`
 - ChromaDB 可以作为向量库后端使用，NumPy 向量索引用于本机备用方案
