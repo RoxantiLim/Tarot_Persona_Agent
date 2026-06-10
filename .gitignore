@@ -30,6 +30,10 @@ data/personas/backups/
 E:/for-LLM/AUXI/
 logs/
 
+# Local planning / handoff notes
+docs/NEXT_CHAT_HANDOFF.md
+docs/PROJECT_PLAN_AND_PROGRESS.md
+
 # Raw private/copyrighted local materials
 Doc/
 Tarotist-*/
