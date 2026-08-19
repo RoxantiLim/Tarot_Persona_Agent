@@ -73,6 +73,12 @@ powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1 -AuxRoot $AuxRoot
 & "$AuxRoot\.venv-clean\Scripts\python.exe" scripts\ingest_documents.py
 ```
 
+推荐使用一键本地启动脚本同时启动 FastAPI 和 Next.js：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_local.ps1
+```
+
 只使用内部后台时，启动 Streamlit：
 
 ```powershell
@@ -87,6 +93,24 @@ powershell -ExecutionPolicy Bypass -File scripts\start_api.ps1
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\start_web.ps1
+```
+
+## Share a temporary demo
+
+需要临时分享给朋友试用时，可以启动 Cloudflare Quick Tunnel：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\start_share.ps1
+```
+
+脚本会先启动本机 FastAPI 和 Next.js，再运行 `cloudflared tunnel --url http://127.0.0.1:3000`，并在终端打印一个随机的 `https://*.trycloudflare.com` 链接。
+
+只分享前端 `3000` 端口，不直接暴露 FastAPI `8787`。朋友访问公网链接时，请求会通过 Next.js 的 `/api/*` 代理转发到本机后端。
+
+这个链接只适合短时间发给熟人测试，不是正式部署。用完后关闭 tunnel：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\stop_share.ps1
 ```
 
 ## Local apps

@@ -25,20 +25,34 @@ export default function StatusPage() {
       {error ? (
         <div className="rounded-3xl border border-red-300/30 bg-red-500/10 p-6 text-red-100">
           还没有连上本地服务：{error}
+          <p className="mt-3 text-sm text-red-100/80">本地演示请运行 scripts\start_local.ps1；临时分享给朋友请运行 scripts\start_share.ps1。</p>
         </div>
       ) : null}
 
       {health ? (
-        <section className="grid gap-4 md:grid-cols-2">
-          <StatusItem label="本地服务" value={health.ok ? "已连接" : "异常"} />
-          <StatusItem label="资料库" value={health.index_exists ? "已准备" : "未准备"} />
-          <StatusItem label="查询方式" value={health.retrieval_mode} />
-          <StatusItem label="资料引擎" value={health.vector_store_backend} />
-          <StatusItem label="匹配模型" value={health.embedding_model} />
-          <StatusItem label="解读模型" value={health.llm_model} />
-          <StatusItem label="牌数" value={`${health.cards_count} 张`} />
-          <StatusItem label="解读风格" value={`${health.readers_count} 个`} />
-        </section>
+        <>
+          {health.status_messages.length ? (
+            <section className="rounded-3xl border border-gold/20 bg-gold/10 p-5 text-sm leading-6 text-gold">
+              {health.status_messages.map((message) => (
+                <p key={message}>{message}</p>
+              ))}
+            </section>
+          ) : null}
+          <section className="grid gap-4 md:grid-cols-2">
+            <StatusItem label="本地服务" value={health.ok ? "已连接" : "异常"} />
+            <StatusItem label="DeepSeek Key" value={health.deepseek_configured ? "已配置" : "未配置"} />
+            <StatusItem label="资料库" value={health.index_exists ? "已准备" : "未准备"} />
+            <StatusItem label="索引类型" value={`${health.vector_store_backend} / ${health.retrieval_mode}`} />
+            <StatusItem label="本地索引" value={health.local_index_exists ? "已存在" : "缺失"} />
+            <StatusItem label="Chroma 索引" value={health.chroma_index_exists ? "已存在" : "缺失"} />
+            <StatusItem label="匹配模型" value={`${health.embedding_model} (${health.embedding_device})`} />
+            <StatusItem label="解读模型" value={health.llm_model} />
+            <StatusItem label="知识片段" value={`${health.knowledge_chunks_count} 条`} />
+            <StatusItem label="审核案例" value={`${health.reviewed_cases_count} 条`} />
+            <StatusItem label="牌数" value={`${health.cards_count} 张`} />
+            <StatusItem label="解读风格" value={`${health.readers_count} 个`} />
+          </section>
+        </>
       ) : !error ? (
         <div className="rounded-3xl border border-white/10 bg-white/[0.06] p-6 text-cream/60">正在检查…</div>
       ) : null}

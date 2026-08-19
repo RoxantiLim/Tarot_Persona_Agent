@@ -37,11 +37,19 @@ export type ReadingResponse = {
 
 export type HealthResponse = {
   ok: boolean;
+  deepseek_configured: boolean;
   index_exists: boolean;
+  local_index_exists: boolean;
+  chroma_index_exists: boolean;
   retrieval_mode: string;
   vector_store_backend: string;
   embedding_model: string;
+  embedding_device: string;
   llm_model: string;
+  knowledge_chunks_count: number;
+  reviewed_cases_count: number;
+  persona_files_count: number;
   cards_count: number;
   readers_count: number;
+  status_messages: string[];
 };

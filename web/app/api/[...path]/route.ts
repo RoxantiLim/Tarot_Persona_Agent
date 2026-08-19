@@ -41,13 +41,28 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown backend proxy error";
+    const friendlyMessage = backendProxyMessage(message);
     return Response.json(
       {
-        detail: `Backend service request failed: ${message}`,
+        detail: friendlyMessage,
       },
       { status: 502 },
     );
   }
+}
+
+function backendProxyMessage(message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("timeout") || lower.includes("aborted")) {
+    return "后端请求超时。请稍后重试，或降低本次请求复杂度。";
+  }
+  if (lower.includes("fetch failed") || lower.includes("econnrefused") || lower.includes("connect")) {
+    return "还没有连上 FastAPI 后端。请运行 scripts\\start_local.ps1；如果在分享给朋友，请运行 scripts\\start_share.ps1。";
+  }
+  if (lower.includes("invalid url")) {
+    return "后端地址配置不正确。请检查 BACKEND_API_BASE_URL。";
+  }
+  return `后端服务请求失败：${message}`;
 }
 
 function forwardedHeaders(headers: Headers) {

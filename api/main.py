@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import FastAPI, HTTPException
@@ -69,24 +70,66 @@ def document_payload(doc: Document) -> dict[str, Any]:
 
 
 def public_error(exc: Exception) -> HTTPException:
+    message = str(exc)
+    if "No knowledge index found" in message:
+        detail = "知识库索引还没有准备好。请先运行 scripts\\ingest_documents.py 构建索引。"
+    elif "timed out" in message.lower() or "timeout" in message.lower():
+        detail = "模型请求超时。请稍后重试，或降低本次请求复杂度。"
+    elif "api" in message.lower() and "key" in message.lower():
+        detail = "模型 API key 似乎没有配置好。请检查 .env 中的 DEEPSEEK_API_KEY。"
+    else:
+        detail = "暂时无法完成请求，请确认本地服务、资料库索引和 .env 配置已经准备好。"
     return HTTPException(
         status_code=500,
-        detail="暂时无法完成请求，请确认本地服务和资料库已经准备好。",
+        detail=detail,
     )
+
+
+def count_jsonl_lines(path: Path) -> int:
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8") as f:
+        return sum(1 for line in f if line.strip())
+
+
+def count_files(path: Path, pattern: str = "*") -> int:
+    if not path.exists():
+        return 0
+    return sum(1 for item in path.rglob(pattern) if item.is_file())
 
 
 @app.get("/api/health")
 def health() -> dict[str, Any]:
     config = get_config()
+    local_index_file = config.data_dir / "indexes" / "local_vectors" / "vectors.npy"
+    chroma_index_file = config.chroma_dir / "chroma.sqlite3"
+    processed_chunks_file = config.processed_dir / "document_chunks.jsonl"
+    reviewed_case_files = list(config.cases_dir.glob("*_reviewed.jsonl")) if config.cases_dir.exists() else []
+    reviewed_cases_count = sum(count_jsonl_lines(path) for path in reviewed_case_files)
+    has_index = index_exists(config)
+    has_key = bool(config.deepseek_api_key.strip())
+    status_messages = []
+    if not has_key:
+        status_messages.append("DEEPSEEK_API_KEY 未配置，生成类功能会返回配置提示。")
+    if not has_index:
+        status_messages.append("知识库索引未找到，请运行 scripts\\ingest_documents.py。")
     return {
         "ok": True,
-        "index_exists": index_exists(config),
+        "deepseek_configured": has_key,
+        "index_exists": has_index,
+        "local_index_exists": local_index_file.exists(),
+        "chroma_index_exists": chroma_index_file.exists(),
         "retrieval_mode": config.retrieval_mode,
         "vector_store_backend": config.vector_store_backend,
         "embedding_model": config.embedding_model,
+        "embedding_device": config.embedding_device,
         "llm_model": config.deepseek_model,
+        "knowledge_chunks_count": count_jsonl_lines(processed_chunks_file),
+        "reviewed_cases_count": reviewed_cases_count,
+        "persona_files_count": count_files(config.personas_dir, "*.json"),
         "cards_count": len(card_display_names()),
         "readers_count": len(DEFAULT_PERSONAS),
+        "status_messages": status_messages,
     }
 
 
