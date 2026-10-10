@@ -1,12 +1,14 @@
 # Tarot Persona Agent
 
-一个本地运行的塔罗知识库和多 Persona 占卜 Agent。它可以把塔罗资料整理成可检索的知识库，结合人工整理的占卜案例和占卜师画像，借助检索增强生成（RAG），实现综合资料学习和塔罗占卜。
+一个支持本地运行和云端部署的塔罗知识库与多 Persona 占卜 Agent。它可以把塔罗资料整理成可检索的知识库，结合人工整理的占卜案例和占卜师画像，借助检索增强生成（RAG），实现综合资料学习和塔罗占卜。
 
 ## What this is
 
 这个仓库用于个人塔罗学习、资料复盘和实习项目展示。塔罗资料、占卜案例、向量索引、模型缓存和 API key 属于本地私有数据。
 
 项目有两条使用路径。需要整理资料和检查数据时，打开 Streamlit 后台；需要体验用户侧占卜和知识库问答时，启动 FastAPI 后端和 Next.js 前端。
+
+用户侧网站已采用 Cloudflare Pages 静态前端与 API 代理、Modal FastAPI 后端部署；线上使用硅基流动 embedding API、NumPy 索引和 DeepSeek API。部署记录与更新步骤见 [部署状态](docs/deployment_status.md)、[Modal 后端部署](docs/modal_deployment.md) 和 [Cloudflare 前端部署](docs/cloudflare_deployment.md)。GitHub 保存代码版本，当前网站需要分别发布前后端，不会随 Git push 自动更新。
 
 ## Showcase
 
@@ -26,7 +28,7 @@
 
 - **知识库助手**：支持牌意查询、主题学习和资料检索，回答会带回来源文件、页码和原文片段
 - **Persona Agent**：支持无牌阵三张牌解读、占卜师风格选择、相似案例检索和可选的风格自检
-- **资料入库**：支持 PDF 文本抽取、扫描页 OCR、页内段落切块、`BAAI/bge-m3` 本地 embedding 和向量检索
+- **资料入库**：支持 PDF 文本抽取、扫描页 OCR、页内段落切块、`BAAI/bge-m3` 本地或 API embedding 和向量检索
 - **后台管理**：支持入库状态检查、案例审核、资料审核、占卜师画像编辑和项目运行状态查看
 - **本机前端**：提供首页、知识库助手、占卜Agent和本机状态页
 
@@ -34,7 +36,7 @@
 
 - **Backend**：Python、Streamlit、FastAPI
 - **Agent and RAG**：LangGraph、LangChain-compatible documents、DeepSeek OpenAI-compatible API
-- **Retrieval**：`BAAI/bge-m3` local embeddings、ChromaDB、NumPy vector-store fallback
+- **Retrieval**：`BAAI/bge-m3` local/API embeddings；线上使用 NumPy，本地可使用 ChromaDB
 - **Document processing**：PyMuPDF、RapidOCR ONNX Runtime
 - **Frontend**：Next.js 15、React 19、TypeScript、Tailwind CSS
 
@@ -43,13 +45,13 @@
 项目把后台、接口和前端分开，方便单独调试：
 
 - `Streamlit`：内部后台，负责资料入库、案例审核、画像编辑和状态检查
-- `FastAPI`：本机 API，把 Python RAG 和 Agent 能力给前端调用
+- `FastAPI`：本机或 Modal API，把 Python RAG 和 Agent 能力给前端调用
 - `Next.js`：用户侧前端，负责占卜Agent、知识库问答和本机状态展示
 - `src/tarot_agent`：核心 Python 模块，包含配置、PDF 解析、embedding、向量检索、LangGraph Agent 和 prompt
 
 ## Run locally
 
-先复制配置文件，并在 `.env` 里填入 DeepSeek API key：
+首次配置时复制配置文件；已有 `.env` 时保留原文件并按模板补充变量。当前模板默认使用 API embedding，需要填写 DeepSeek 和硅基流动密钥：
 
 ```powershell
 Copy-Item .env.example .env
@@ -57,6 +59,7 @@ Copy-Item .env.example .env
 
 ```text
 DEEPSEEK_API_KEY=your_deepseek_api_key_here
+EMBEDDING_API_KEY=your_embedding_api_key_here
 ```
 
 安装 Python 依赖。默认会把虚拟环境、模型和 pip 缓存放到 `E:\for-LLM\AUXI\Tarot_Persona_Agent`；如果你的辅助目录不同，修改 `$AuxRoot` 即可：
@@ -66,11 +69,13 @@ $AuxRoot = "E:\for-LLM\AUXI\Tarot_Persona_Agent"
 powershell -ExecutionPolicy Bypass -File scripts\setup_env.ps1 -AuxRoot $AuxRoot
 ```
 
-构建知识库索引：
+已有知识片段时，按 [Modal 部署说明](docs/modal_deployment.md#3-重建独立索引并验证) 重建独立 API 索引。首次导入原始资料时，在完整本地环境中构建知识库；扫描 PDF 需要设置 `PDF_OCR_ENABLED=1`：
 
 ```powershell
 & "$AuxRoot\.venv-clean\Scripts\python.exe" scripts\ingest_documents.py
 ```
+
+使用本地 embedding 时设置 `EMBEDDING_PROVIDER=local`，同时将 `LOCAL_INDEX_DIR` 改为 `data/indexes/local_vectors`；若使用 Chroma，设置 `VECTOR_STORE_BACKEND=chroma` 和 `BUILD_CHROMA=1`，再构建匹配索引。API 与本地模型的索引分开保存。
 
 推荐使用一键本地启动脚本同时启动 FastAPI 和 Next.js：
 
@@ -132,7 +137,7 @@ http://127.0.0.1:3000        Next.js 前端
 /status     本机状态
 ```
 
-前端默认连接 `http://127.0.0.1:8787`。需要改后端地址时，设置 `NEXT_PUBLIC_API_BASE_URL`。
+浏览器默认请求同源 `/api/*`，由 Next.js 服务端代理到后端。代理默认连接 `http://127.0.0.1:8787`；需要连接 Modal 时，在 `web/.env.local` 设置 `BACKEND_API_BASE_URL` 和服务端 `BACKEND_API_ACCESS_TOKEN`，随后重启 Next.js。不要将访问令牌放入 `NEXT_PUBLIC_*`。
 
 ## Development checks
 
@@ -152,18 +157,19 @@ npm.cmd run typecheck
 
 ## Data and privacy
 
-`Doc/`、`Tarotist-*`、向量索引、OCR 缓存、模型缓存和案例 JSONL 文件保留在本地。
+`Doc/`、`Tarotist-*`、向量索引、OCR 缓存、模型缓存和案例 JSONL 文件不提交到 Git。Modal 部署会将经过验证的索引、Persona 和审核案例上传到自己的工作区；Cloudflare 前端仅包含页面、脚本、样式和牌图。
 
-原始资料、截图案例和本地索引都属于私有工作数据。公开仓库只保留代码、配置模板、示例画像和项目文档。
+原始资料、截图案例和索引属于私有工作数据。公开仓库只保留代码、配置模板、示例画像和项目文档。线上接口会返回检索片段和相似案例，分享前应脱敏；后端访问令牌保护代理到 Modal 的连接，不替代访客登录。
 
 ## Current limitations
 
-- 项目按本机运行设计，没有公网部署配置，但通过 Cloudflare Tunnel 实现了公网临时地址
+- 云端前端和后端分别发布；知识资料更新后需要重新准备索引和部署包
 - 前端主要面向电脑端，移动端仍需优化
 - Streamlit 后台实现了多风格对比，尚未实装到Next.js 前端
 - 生成模型使用 DeepSeek OpenAI-compatible 接口
-- embedding 使用本地 `BAAI/bge-m3`
-- ChromaDB 可以作为向量库后端使用，NumPy 向量索引用于本机备用方案
+- 线上 embedding 使用外部 `BAAI/bge-m3` API；本地模型模式继续保留
+- 线上使用 NumPy 索引；切换 Chroma 需要另外准备依赖、索引和部署配置
+- 当前 API 有后端令牌和进程内限流，网站未实现访客登录或统一的跨容器配额
 - 扫描 PDF 依赖 OCR 质量，少量页面可能仍需要人工检查
 - 牌图截图案例不默认自动识别牌名，缺牌名的案例需要人工标注后再入库
 - GPU 版 PyTorch 当前按 `torch==2.6.0+cu124` 配置
@@ -174,7 +180,8 @@ npm.cmd run typecheck
 
 ```text
 app.py                  Streamlit 内部后台入口
-api/                    FastAPI 本机接口
+api/                    FastAPI 本机与云端接口
+modal_app.py            Modal 后端部署入口
 web/                    Next.js 前端
 src/tarot_agent/        RAG、Agent、配置和数据处理核心模块
 scripts/                环境、启动、入库和案例处理脚本
