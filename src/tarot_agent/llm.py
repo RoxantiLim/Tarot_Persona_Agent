@@ -15,6 +15,7 @@ def deepseek_chat(config: AppConfig, messages: list[dict[str, str]], temperature
         api_key=config.deepseek_api_key,
         base_url=config.deepseek_base_url,
         timeout=config.deepseek_timeout_seconds,
+        max_retries=0,
     )
 
     def call_model(model: str) -> str:

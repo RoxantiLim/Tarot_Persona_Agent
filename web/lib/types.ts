@@ -44,6 +44,9 @@ export type HealthResponse = {
   retrieval_mode: string;
   vector_store_backend: string;
   embedding_model: string;
+  embedding_provider: "local" | "api";
+  embedding_configured: boolean;
+  index_compatible: boolean;
   embedding_device: string;
   llm_model: string;
   knowledge_chunks_count: number;

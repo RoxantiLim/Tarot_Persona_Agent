@@ -1,0 +1,2 @@
+# Install the deployment CLI in a separate environment under E:/for-LLM/AUXI.
+modal[api-proxy-support]==1.6.1

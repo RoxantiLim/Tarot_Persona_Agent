@@ -1,10 +1,73 @@
 from __future__ import annotations
 
 import os
+from urllib.parse import urlsplit
 
 from .config import AppConfig
 
 _MODEL_CACHE = {}
+
+
+def create_embeddings(config: AppConfig):
+    if config.embedding_provider == "api":
+        return ApiEmbeddings(config)
+    return BgeM3Embeddings(config)
+
+
+class ApiEmbeddings:
+    """OpenAI-compatible embedding API; never imports local model packages."""
+
+    def __init__(self, config: AppConfig):
+        if not config.embedding_api_key.strip():
+            raise RuntimeError("Embedding API key 未配置，请填写 EMBEDDING_API_KEY。")
+        if config.embedding_batch_size < 1 or config.embedding_timeout_seconds <= 0:
+            raise ValueError("Embedding batch size and timeout must be positive")
+        url = urlsplit(config.embedding_base_url)
+        if url.scheme != "https" or not url.hostname or url.username or url.password or url.query or url.fragment:
+            raise ValueError("EMBEDDING_BASE_URL must be an HTTPS base URL without credentials or query parameters")
+        from openai import OpenAI
+
+        self.config = config
+        self.client = OpenAI(
+            api_key=config.embedding_api_key,
+            base_url=config.embedding_base_url,
+            timeout=config.embedding_timeout_seconds,
+            max_retries=1,
+        )
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        import numpy as np
+
+        vectors: list[list[float]] = []
+        for start in range(0, len(texts), self.config.embedding_batch_size):
+            batch = texts[start : start + self.config.embedding_batch_size]
+            if any(not text.strip() for text in batch):
+                raise ValueError("Embedding inputs must not be empty")
+            # Avoid forwarding upstream error messages that may contain request headers.
+            try:
+                response = self.client.embeddings.create(
+                    model=self.config.embedding_model, input=batch, encoding_format="float",
+                )
+            except Exception as exc:
+                status = getattr(exc, "status_code", None)
+                label = f"HTTP {status}" if status else type(exc).__name__
+                raise RuntimeError(f"Embedding API 请求失败（{label}），请检查密钥、额度和网络后重试。") from None
+            rows = sorted(response.data, key=lambda item: item.index)
+            if [row.index for row in rows] != list(range(len(batch))):
+                raise ValueError("Embedding API returned missing or duplicate vector indices")
+            matrix = np.asarray([row.embedding for row in rows], dtype=np.float32)
+            if matrix.ndim != 2 or matrix.shape[1] == 0 or not np.isfinite(matrix).all():
+                raise ValueError("Embedding API returned invalid vectors")
+            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+            if np.any(norms == 0):
+                raise ValueError("Embedding API returned zero vectors")
+            if vectors and len(vectors[0]) != matrix.shape[1]:
+                raise ValueError("Embedding API returned inconsistent vector dimensions")
+            vectors.extend((matrix / norms).tolist())
+        return vectors
+
+    def embed_query(self, text: str) -> list[float]:
+        return self.embed_documents([text])[0]
 
 
 class BgeM3Embeddings:

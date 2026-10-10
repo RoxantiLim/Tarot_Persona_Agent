@@ -20,6 +20,8 @@ skills-lock.json
 data/indexes/
 data/processed/
 data/reports/
+data/deploy/
+.env.modal
 data/*.log
 data/knowledge_filter_overrides.json
 data/cases/*_candidates.jsonl
@@ -31,6 +33,7 @@ E:/for-LLM/AUXI/
 logs/
 
 # Local planning / handoff notes
+.archify/
 docs/NEXT_CHAT_HANDOFF.md
 docs/PROJECT_PLAN_AND_PROGRESS.md
 
@@ -45,7 +48,11 @@ Cards-png/
 # Next.js local frontend
 web/node_modules/
 web/.next/
+web/.wrangler/
 web/out/
+web/out.backup-*/
+web/.out-*/
+web/.dev.vars*
 web/.env*.local
 web/tsconfig.tsbuildinfo
 web/public/cards/

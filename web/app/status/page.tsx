@@ -45,7 +45,9 @@ export default function StatusPage() {
             <StatusItem label="索引类型" value={`${health.vector_store_backend} / ${health.retrieval_mode}`} />
             <StatusItem label="本地索引" value={health.local_index_exists ? "已存在" : "缺失"} />
             <StatusItem label="Chroma 索引" value={health.chroma_index_exists ? "已存在" : "缺失"} />
-            <StatusItem label="匹配模型" value={`${health.embedding_model} (${health.embedding_device})`} />
+            <StatusItem label="匹配模型" value={`${health.embedding_model} (${health.embedding_provider === "api" ? "API" : health.embedding_device})`} />
+            <StatusItem label="向量服务" value={health.embedding_configured ? "已配置" : "未配置"} />
+            <StatusItem label="向量索引兼容性" value={health.index_compatible ? "通过" : "待检查"} />
             <StatusItem label="解读模型" value={health.llm_model} />
             <StatusItem label="知识片段" value={`${health.knowledge_chunks_count} 条`} />
             <StatusItem label="审核案例" value={`${health.reviewed_cases_count} 条`} />

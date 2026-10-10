@@ -5,6 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:cloudflare": "node scripts/build-cloudflare.mjs",
+    "test:proxy": "node --test tests/cloudflare-proxy.test.mjs",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"

@@ -8,7 +8,7 @@ from .documents import Document
 from .llm import deepseek_chat
 from .prompts import KNOWLEDGE_SYSTEM_PROMPT, KNOWLEDGE_USER_TEMPLATE
 from .schemas import RAGResult
-from .vector_store import index_exists, load_vector_store
+from .vector_store import index_exists, load_vector_store, local_index_path
 
 
 def retrieve_context(
@@ -29,7 +29,7 @@ def retrieve_context(
 
 
 def keyword_search(config: AppConfig, query: str, top_k: int = 5) -> list[Document]:
-    docs_file = config.data_dir / "indexes" / "local_vectors" / "documents.jsonl"
+    docs_file = local_index_path(config) / "documents.jsonl"
     if not docs_file.exists():
         return []
 

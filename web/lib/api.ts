@@ -17,7 +17,7 @@ export async function apiPost<T>(path: string, body: unknown): Promise<T> {
 async function parseResponse<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    const message = typeof payload.detail === "string" ? payload.detail : "暂时连不上本地服务。请确认已经运行 scripts\\start_local.ps1 或 scripts\\start_share.ps1。";
+    const message = typeof payload.detail === "string" ? payload.detail : "暂时无法连接服务，请稍后重试。";
     throw new Error(message);
   }
   return payload as T;

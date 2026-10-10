@@ -1,0 +1,9 @@
+name = "tarot-persona-web"
+pages_build_output_dir = "./out"
+compatibility_date = "2026-10-09"
+
+[vars]
+BACKEND_API_BASE_URL = "https://roxantilim--tarot-persona-api-api.modal.run"
+
+[env.preview.vars]
+BACKEND_API_BASE_URL = "https://roxantilim--tarot-persona-api-api.modal.run"

@@ -145,7 +145,16 @@ def run_persona_reading(
     }
     try:
         from langgraph.graph import END, StateGraph
-
+    except ImportError:
+        final_state = parse_user_input(initial_state)
+        final_state = retrieve_tarot_knowledge(config)(final_state)
+        final_state = retrieve_reader_cases(config)(final_state)
+        final_state = load_persona_profile(config)(final_state)
+        final_state = generate_reading(config)(final_state)
+        if include_check:
+            final_state = style_and_grounding_check(config)(final_state)
+        final_state["langgraph_fallback"] = "LangGraph is not installed"
+    else:
         graph = StateGraph(ReadingState)
         graph.add_node("parse_user_input", parse_user_input)
         graph.add_node("retrieve_tarot_knowledge", retrieve_tarot_knowledge(config))
@@ -166,16 +175,6 @@ def run_persona_reading(
         else:
             graph.add_edge("generate_reading", END)
         final_state = graph.compile().invoke(initial_state)
-    except Exception as exc:
-        final_state = initial_state
-        final_state = parse_user_input(final_state)
-        final_state = retrieve_tarot_knowledge(config)(final_state)
-        final_state = retrieve_reader_cases(config)(final_state)
-        final_state = load_persona_profile(config)(final_state)
-        final_state = generate_reading(config)(final_state)
-        if include_check:
-            final_state = style_and_grounding_check(config)(final_state)
-        final_state["langgraph_fallback"] = str(exc)
 
     return AgentResult(
         answer=final_state.get("answer", ""),

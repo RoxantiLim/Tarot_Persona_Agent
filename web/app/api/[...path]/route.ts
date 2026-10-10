@@ -23,6 +23,10 @@ async function proxyRequest(request: NextRequest, context: RouteContext) {
   const requestUrl = new URL(request.url);
   const targetUrl = new URL(`/api/${path.join("/")}${requestUrl.search}`, BACKEND_API_BASE_URL);
   const headers = forwardedHeaders(request.headers);
+  const accessToken = process.env.BACKEND_API_ACCESS_TOKEN;
+  if (accessToken) {
+    headers.set("authorization", `Bearer ${accessToken}`);
+  }
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
 
   try {
